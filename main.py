@@ -3,6 +3,7 @@ import logging
 import os
 import sqlite3
 import hashlib
+import urllib.parse
 from aiohttp import web
 from duckduckgo_search import DDGS
 
@@ -42,14 +43,6 @@ def save_message(user_id: str, role: str, content: str):
     conn.commit()
     conn.close()
 
-def get_user_history(user_id: str, limit: int = 6):
-    conn = sqlite3.connect("ziyo_core.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT role, content FROM memory WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit))
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
-
 def validate_api_key(api_key: str) -> bool:
     if not api_key:
         return False
@@ -86,23 +79,24 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
     text = prompt.lower().strip()
     save_message(user_id, "user", prompt)
     
-    # 1. Rasm yaratish moduli (Foydalanuvchi xohlagan narsani aniq ajratib olish va dahshatli sifat berish)
+    # 1. Rasm yaratish moduli (Maxsus belgilar va URL kodlash to'g'rilandi)
     if any(w in text for w in ["rasm", "chiz", "generation", "image", "foto", "draw", "surat"]):
-        # Ortiqcha so'zlarni tozalab, faqat mavzuning o'zini qoldiramiz
         clean_prompt = prompt
         for word in ["rasmini chiz", "rasm chiz", "chizib ber", "chiz", "rasm", "surat", "foto", "image"]:
             clean_prompt = clean_prompt.replace(word, "")
         clean_prompt = clean_prompt.strip(" ,.-!").strip()
         
-        if not clean_prompt:
-            clean_prompt = "futuristic cyberpunk city"
+        if not clean_prompt or len(clean_prompt) < 2:
+            clean_prompt = "cyberpunk futuristic car"
 
-        # AI uchun dahshatli professional detallar qo'shamiz
+        # AI uchun dahshatli professional detallar
         enhanced_prompt = f"{clean_prompt}, hyperrealistic, 8k resolution, cinematic lighting, masterpiece, ultra-detailed, dramatic shadows, unreal engine 5 render"
-        encoded_prompt = enhanced_prompt.replace(" ", "%20")
+        
+        # URL uchun to'g'ri kodlash (xatoliklarni oldini oladi)
+        encoded_prompt = urllib.parse.quote(enhanced_prompt)
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
         
-        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida mukammal sifatda rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'>"
+        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'>"
         save_message(user_id, "assistant", f"[Rasm yaratildi: {clean_prompt}]")
         return reply
 
@@ -114,15 +108,15 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
             save_message(user_id, "assistant", reply)
             return reply
 
-    # 3. Oddiy savollar va muloqot
+    # 3. Oddiy muloqot
     if "salom" in text or "assalomu alaykum" in text:
-        reply = "Assalomu alaykum! Men ZiyoAI — mustaqil intellektual tizimman. Xohlasangiz ovoz bilan gaplashing, xohlasangiz xohlagan narsangizni dahshatli formatda chizishni buyuring!"
+        reply = "Assalomu alaykum! ZiyoAI tayyor. Nima chizib berishimni xohlaysiz?"
     elif "python" in text:
-        reply = "Python orqali biz shunday ulkan tizimlarni noldan o'zimiz quramiz. Bu eng qudratli dasturlash tili!"
+        reply = "Python — eng kuchli dasturlash tili."
     elif "sen kimsan" in text or "ziyoai" in text:
-        reply = "Men ZiyoAI man. Hech qanday chet el pullik API'lariga bog'lanmagan, o'zimizning mustaqil serverimizda ishlaydigan mukammal tizimman."
+        reply = "Men ZiyoAI man, mustaqil intellektual tizim."
     else:
-        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha tizim tahlil o'tkazdi. Savolingiz yoki buyrug'ingiz qabul qilindi!"
+        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha so'rovingiz qabul qilindi!"
 
     save_message(user_id, "assistant", reply)
     return reply
@@ -206,15 +200,15 @@ async def index_handler(request):
         
         <div class="main-container">
             <div class="chat-header">
-                <span>ZiyoAI Markaziy Tizimi v5.0</span>
-                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">To'liq Faol Rejim</span>
+                <span>ZiyoAI Markaziy Tizimi v6.0</span>
+                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">URL Kodlash Tuzatildi</span>
             </div>
             
             <div class="chat-messages" id="messages">
                 <div class="message-wrapper">
                     <div class="avatar ai-avatar">Z</div>
                     <div class="message-content">
-                        <b>ZiyoAI:</b> Assalomu alaykum! Endi nima buyursangiz, aynan o'shani dahshatli va mukammal formatda chizib beraman. Marhamat, sinab ko'ring!
+                        <b>ZiyoAI:</b> Xatolik to'g'irlandi! Endi rasm so'rovingiz mukammal ishlaydi va rasm ochiladi. Marhamat, sinab ko'ring!
                     </div>
                 </div>
             </div>
@@ -222,7 +216,7 @@ async def index_handler(request):
             <div class="input-area">
                 <div class="input-box">
                     <button class="action-btn" id="micBtn" onclick="toggleSpeechRecognition()" title="Ovoz bilan gaplashish">🎤</button>
-                    <textarea id="userInput" rows="1" placeholder="Masalan: 'Qora sport mashina garajda' yoki 'Qor bosgan tog'..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
+                    <textarea id="userInput" rows="1" placeholder="Masalan: 'Qora sport mashina' yoki 'Qor bosgan tog'..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
                     <button class="send-btn" onclick="sendMessage()">➔</button>
                 </div>
             </div>
@@ -274,7 +268,7 @@ async def index_handler(request):
             function stopListeningState() {
                 isListening = false;
                 document.getElementById('micBtn').classList.remove('listening');
-                document.getElementById('userInput').placeholder = "Masalan: 'Qora sport mashina garajda'...";
+                document.getElementById('userInput').placeholder = "Masalan: 'Qora sport mashina'...";
             }
 
             function speakText(text) {
