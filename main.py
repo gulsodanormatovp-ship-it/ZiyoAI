@@ -79,21 +79,18 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
     text = prompt.lower().strip()
     save_message(user_id, "user", prompt)
     
-    # 1. Rasm yaratish moduli (Qisqartirilgan va tezkor versiya)
+    # 1. Rasm yaratish moduli
     if any(w in text for w in ["rasm", "chiz", "generation", "image", "foto", "draw", "surat"]):
         clean_prompt = prompt
         for word in ["rasmini chiz", "rasm chiz", "chizib ber", "chiz", "rasm", "surat", "foto", "image", "yoki", "va"]:
             clean_prompt = clean_prompt.replace(word, "")
         
-        # Tarmoq timeout qilmasligi uchun faqat birinchi qismni olamiz
         clean_prompt = clean_prompt.split(".")[0].split("yoki")[0].strip(" ,.-!").strip()
         
         if not clean_prompt or len(clean_prompt) < 2:
             clean_prompt = "cyberpunk futuristic car"
 
-        # Tez yuklanuvchi sifatlar
         enhanced_prompt = f"{clean_prompt}, hyperrealistic, 8k resolution, cinematic lighting"
-        
         encoded_prompt = urllib.parse.quote(enhanced_prompt)
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
         
@@ -209,7 +206,7 @@ async def index_handler(request):
                 <div class="message-wrapper">
                     <div class="avatar ai-avatar">Z</div>
                     <div class="message-content">
-                        <b>ZiyoAI:</b> Barcha xatoliklar tuzatildi! Endi xohlagan rasmingiz muammosiz va tez ochiladi. Marhamat, sinab ko'ring!
+                        <b>ZiyoAI:</b> Barcha xatoliklar to'liq tuzatildi! Marhamat, sinab ko'ring!
                     </div>
                 </div>
             </div>
@@ -300,7 +297,7 @@ async def index_handler(request):
                 messages.innerHTML += `
                     <div class="message-wrapper" id="${loadingId}">
                         <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI dahshatli natija tayyorlamoqda...</div>
+                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI natija tayyorlamoqda...</div>
                     </div>`;
                 messages.scrollTop = messages.scrollHeight;
 
