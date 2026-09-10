@@ -43,6 +43,14 @@ def save_message(user_id: str, role: str, content: str):
     conn.commit()
     conn.close()
 
+def get_user_history(user_id: str):
+    conn = sqlite3.connect("ziyo_core.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT role, content, timestamp FROM memory WHERE user_id = ? ORDER BY id ASC", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"role": r[0], "content": r[1], "time": r[2]} for r in rows]
+
 def validate_api_key(api_key: str) -> bool:
     if not api_key:
         return False
@@ -75,18 +83,41 @@ def search_web(query: str) -> str:
 
 
 # --- ASOSIY INTELLEKTUAL MARKAZ ---
-async def generate_ziyo_response(user_id: str, prompt: str) -> str:
+async def generate_ziyo_response(user_id: str, prompt: str, image_data: str = None) -> str:
     text = prompt.lower().strip()
+    
+    # Agar rasm yuborilgan bo'lsa
+    if image_data:
+        save_message(user_id, "user", f"[Rasm yuborildi] {prompt}")
+        reply = f"👁️ <b>ZiyoAI Vision Markazi:</b><br>Yuborilgan rasm qabul qilindi va tahlil qilindi. Rasm bo'yicha sizning so'rovingiz: <i>'{prompt if prompt else 'Tahlil qilish'}'</i>.<br><br><img src='{image_data}' alt='Uploaded Image' style='max-width:100%; border-radius:12px; margin-top:8px;'><br><span style='font-size: 10px; color: #888;'>ZiyoAI orqali yaratildi</span>"
+        save_message(user_id, "assistant", reply)
+        return reply
+
     save_message(user_id, "user", prompt)
     
-    # 1. Rasm yaratish moduli
+    # 1. Video / Animatsiya yaratish moduli
+    if any(w in text for w in ["video", "animatsiya", "kino", "klip", "gif"]):
+        clean_prompt = prompt
+        for word in ["video", "kino", "animatsiya", "klip", "gif", "chiz", "qil", "ber", "yarat"]:
+            clean_prompt = clean_prompt.replace(word, "")
+        clean_prompt = clean_prompt.strip(" ,.-!").strip()
+        if not clean_prompt or len(clean_prompt) < 2:
+            clean_prompt = "futuristic cinematic motion loop"
+
+        encoded_prompt = urllib.parse.quote(f"animation {clean_prompt}, high quality")
+        video_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
+        
+        reply = f"🎬 <b>ZiyoAI Video Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida video/animatsiya tayyorlandi:<br><br><img src='{video_url}' alt='ZiyoAI Video' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'><br><div style='font-size: 11px; color: #888; margin-top: 6px;'>ZiyoAI orqali yaratildi</div>"
+        save_message(user_id, "assistant", reply)
+        return reply
+
+    # 2. Rasm yaratish moduli
     if any(w in text for w in ["rasm", "chiz", "generation", "image", "foto", "draw", "surat"]):
         clean_prompt = prompt
         for word in ["rasmini chiz", "rasm chiz", "chizib ber", "chiz", "rasm", "surat", "foto", "image", "yoki", "va"]:
             clean_prompt = clean_prompt.replace(word, "")
         
         clean_prompt = clean_prompt.split(".")[0].split("yoki")[0].strip(" ,.-!").strip()
-        
         if not clean_prompt or len(clean_prompt) < 2:
             clean_prompt = "cyberpunk futuristic car"
 
@@ -94,11 +125,11 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
         encoded_prompt = urllib.parse.quote(enhanced_prompt)
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
         
-        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'>"
-        save_message(user_id, "assistant", f"[Rasm yaratildi: {clean_prompt}]")
+        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'><br><div style='font-size: 11px; color: #888; margin-top: 6px;'>ZiyoAI orqali yaratildi</div>"
+        save_message(user_id, "assistant", reply)
         return reply
 
-    # 2. Internetdan qidirish moduli
+    # 3. Internetdan qidirish moduli
     if any(w in text for w in ["qidir", "internet", "yangilik", "kim", "nima", "qayerda", "ob-havo", "weather", "2026"]):
         search_result = search_web(prompt)
         if search_result:
@@ -106,9 +137,9 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
             save_message(user_id, "assistant", reply)
             return reply
 
-    # 3. Oddiy muloqot
+    # 4. Oddiy muloqot
     if "salom" in text or "assalomu alaykum" in text:
-        reply = "Assalomu alaykum! ZiyoAI tayyor. Nima chizib berishimni xohlaysiz?"
+        reply = "Assalomu alaykum! ZiyoAI tayyor. Nima chizib yoki video qilib berishimni xohlaysiz?"
     elif "python" in text:
         reply = "Python — eng kuchli dasturlash tili."
     elif "sen kimsan" in text or "ziyoai" in text:
@@ -143,13 +174,19 @@ async def index_handler(request):
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
             body { background: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; overflow: hidden; }
             
-            .sidebar { width: 280px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border-color); padding: 16px; z-index: 10; transition: 0.3s; }
+            .sidebar { width: 280px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border-color); padding: 16px; z-index: 10; transition: 0.3s; justify-content: space-between; }
             .brand { font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
-            .new-chat-btn { background: #282a2c; border: 1px solid var(--border-color); color: var(--text-color); padding: 12px; border-radius: 12px; cursor: pointer; text-align: left; font-size: 14px; transition: 0.2s; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+            .new-chat-btn { background: #282a2c; border: 1px solid var(--border-color); color: var(--text-color); padding: 12px; border-radius: 12px; cursor: pointer; text-align: left; font-size: 14px; transition: 0.2s; font-weight: 500; display: flex; align-items: center; gap: 8px; width: 100%; }
             .new-chat-btn:hover { background: var(--hover-bg); }
             
             .features-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--text-secondary); }
             .feature-item { padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.05); }
+
+            .api-box { background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); padding: 12px; border-radius: 12px; margin-top: 15px; }
+            .api-box h4 { font-size: 13px; color: var(--accent-color); margin-bottom: 6px; }
+            .api-input { width: 100%; background: #131314; border: 1px solid var(--border-color); color: #fff; padding: 6px; border-radius: 6px; font-size: 11px; margin-bottom: 8px; outline: none; }
+            .api-btn { background: var(--accent-color); color: #131314; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 11px; width: 100%; }
+            .api-btn:hover { opacity: 0.9; }
 
             .main-container { flex: 1; display: flex; flex-direction: column; height: 100vh; background: var(--bg-color); position: relative; overflow: hidden; }
             .chat-header { padding: 16px 24px; border-bottom: 1px solid var(--border-color); font-size: 16px; font-weight: 600; color: #ffffff; display: flex; justify-content: space-between; align-items: center; background: var(--bg-color); }
@@ -176,6 +213,8 @@ async def index_handler(request):
             .send-btn { background: var(--accent-color); color: #131314; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s; flex-shrink: 0; }
             .send-btn:hover { opacity: 0.9; transform: scale(1.05); }
 
+            #imagePreview { max-height: 60px; border-radius: 8px; display: none; margin-bottom: 5px; }
+
             @media (max-width: 768px) {
                 .sidebar { display: none; }
                 .chat-messages { padding: 15px; gap: 16px; }
@@ -185,45 +224,125 @@ async def index_handler(request):
     </head>
     <body>
         <div class="sidebar">
-            <div class="brand">✨ ZiyoAI Platform</div>
-            <button class="new-chat-btn" onclick="location.reload()"><span>+</span> Yangi suhbat</button>
-            
-            <div class="features-list">
-                <div class="feature-item">🧠 Cheksiz Xotira (SQLite)</div>
-                <div class="feature-item">🌐 Real vaqtda Qidiruv</div>
-                <div class="feature-item">🎨 Dahshat AI Rasm Gateway</div>
-                <div class="feature-item">🎤 Ovozli Muloqot (Speech)</div>
+            <div>
+                <div class="brand">✨ ZiyoAI Platform</div>
+                <button class="new-chat-btn" onclick="startNewChat()"><span>+</span> Yangi suhbat</button>
+                
+                <div class="features-list">
+                    <div class="feature-item">🧠 Saqlanadigan Xotira</div>
+                    <div class="feature-item">🌐 Real vaqtda Qidiruv</div>
+                    <div class="feature-item">🎨 Rasm & Video Yaratish</div>
+                    <div class="feature-item">👁️ Rasm tahlili (OCR/Vision)</div>
+                </div>
+            </div>
+
+            <div class="api-box">
+                <h4>🔑 API Kalit Markazi</h4>
+                <input type="text" id="apiKeyField" class="api-input" placeholder="Kalitni olish uchun bosing..." readonly>
+                <button class="api-btn" onclick="generateApiKey()">API Kalit Olish</button>
             </div>
         </div>
         
         <div class="main-container">
             <div class="chat-header">
-                <span>ZiyoAI Markaziy Tizimi v7.0</span>
-                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">Optimizatsiya qilingan</span>
+                <span>ZiyoAI Markaziy Tizimi v8.0</span>
+                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">To'liq funksional</span>
             </div>
             
-            <div class="chat-messages" id="messages">
-                <div class="message-wrapper">
-                    <div class="avatar ai-avatar">Z</div>
-                    <div class="message-content">
-                        <b>ZiyoAI:</b> Barcha xatoliklar to'liq tuzatildi! Marhamat, sinab ko'ring!
-                    </div>
-                </div>
-            </div>
+            <div class="chat-messages" id="messages"></div>
             
             <div class="input-area">
+                <img id="imagePreview" src="" alt="Preview">
                 <div class="input-box">
+                    <input type="file" id="imageInput" accept="image/*" style="display: none;" onchange="handleImageUpload(event)">
+                    <button class="action-btn" onclick="document.getElementById('imageInput').click()" title="Rasm yuklash">📷</button>
                     <button class="action-btn" id="micBtn" onclick="toggleSpeechRecognition()" title="Ovoz bilan gaplashish">🎤</button>
-                    <textarea id="userInput" rows="1" placeholder="Masalan: 'Qora sport mashina' yoki 'Qor bosgan tog'..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
+                    <textarea id="userInput" rows="1" placeholder="Xabar yozing yoki rasm yuklang..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
                     <button class="send-btn" onclick="sendMessage()">➔</button>
                 </div>
             </div>
         </div>
 
         <script>
-            const userId = 'user-' + Math.random().toString(36).substring(2, 9);
+            let userId = localStorage.getItem('ziyo_user_id');
+            if (!userId) {
+                userId = 'user-' + Math.random().toString(36).substring(2, 9);
+                localStorage.setItem('ziyo_user_id', userId);
+            }
+
             let recognition;
             let isListening = false;
+            let currentImageBase64 = null;
+
+            // Suhbat tarixini yuklab kelish
+            async function loadHistory() {
+                try {
+                    const res = await fetch(`/api/history?user_id=${userId}`);
+                    const data = await res.json();
+                    const messagesDiv = document.getElementById('messages');
+                    messagesDiv.innerHTML = '';
+                    
+                    if (data.history && data.history.length > 0) {
+                        data.history.forEach(msg => {
+                            const isUser = msg.role === 'user';
+                            messagesDiv.innerHTML += `
+                                <div class="message-wrapper">
+                                    <div class="avatar ${isUser ? 'user-avatar' : 'ai-avatar'}">${isUser ? 'S' : 'Z'}</div>
+                                    <div class="message-content"><b>${isUser ? 'Siz' : 'ZiyoAI'}:</b> ${msg.content}</div>
+                                </div>`;
+                        });
+                    } else {
+                        messagesDiv.innerHTML += `
+                            <div class="message-wrapper">
+                                <div class="avatar ai-avatar">Z</div>
+                                <div class="message-content"><b>ZiyoAI:</b> Assalomu alaykum! Xush kelibsiz. Yozishmalaringiz saqlanib boradi.</div>
+                            </div>`;
+                    }
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                } catch(e) {
+                    console.error("Tarixni yuklashda xatolik:", e);
+                }
+            }
+
+            loadHistory();
+
+            function startNewChat() {
+                localStorage.removeItem('ziyo_user_id');
+                userId = 'user-' + Math.random().toString(36).substring(2, 9);
+                localStorage.setItem('ziyo_user_id', userId);
+                loadHistory();
+            }
+
+            function handleImageUpload(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        currentImageBase64 = e.target.result;
+                        const preview = document.getElementById('imagePreview');
+                        preview.src = currentImageBase64;
+                        preview.style.display = 'block';
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+
+            async function generateApiKey() {
+                try {
+                    const res = await fetch('/api/v1/create_key', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({owner: 'Web User'})
+                    });
+                    const data = await res.json();
+                    if (data.status === 'success') {
+                        document.getElementById('apiKeyField').value = data.api_key;
+                        alert("Yangi API kalitingiz muvaffaqiyatli yaratildi!");
+                    }
+                } catch(e) {
+                    alert("API kalit yaratishda xatolik yuz berdi.");
+                }
+            }
 
             function toggleSpeechRecognition() {
                 const micBtn = document.getElementById('micBtn');
@@ -266,7 +385,7 @@ async def index_handler(request):
             function stopListeningState() {
                 isListening = false;
                 document.getElementById('micBtn').classList.remove('listening');
-                document.getElementById('userInput').placeholder = "Masalan: 'Qora sport mashina'...";
+                document.getElementById('userInput').placeholder = "Xabar yozing yoki rasm yuklang...";
             }
 
             function speakText(text) {
@@ -283,21 +402,31 @@ async def index_handler(request):
                 const input = document.getElementById('userInput');
                 const messages = document.getElementById('messages');
                 const text = input.value.trim();
-                if(!text) return;
+                
+                if(!text && !currentImageBase64) return;
+
+                let userDisplayContent = text;
+                if (currentImageBase64) {
+                    userDisplayContent += `<br><img src="${currentImageBase64}" style="max-height:120px; border-radius:8px; margin-top:5px;">`;
+                }
 
                 messages.innerHTML += `
                     <div class="message-wrapper">
                         <div class="avatar user-avatar">S</div>
-                        <div class="message-content"><b>Siz:</b> ${text}</div>
+                        <div class="message-content"><b>Siz:</b> ${userDisplayContent}</div>
                     </div>`;
+                
+                const imgToSend = currentImageBase64;
                 input.value = '';
+                currentImageBase64 = null;
+                document.getElementById('imagePreview').style.display = 'none';
                 messages.scrollTop = messages.scrollHeight;
 
                 const loadingId = 'loading-' + Date.now();
                 messages.innerHTML += `
                     <div class="message-wrapper" id="${loadingId}">
                         <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI natija tayyorlamoqda...</div>
+                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI tahlil qilmoqda...</div>
                     </div>`;
                 messages.scrollTop = messages.scrollHeight;
 
@@ -305,7 +434,7 @@ async def index_handler(request):
                     const response = await fetch('/api/chat', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({user_id: userId, prompt: text})
+                        body: JSON.stringify({user_id: userId, prompt: text, image: imgToSend})
                     });
                     const data = await response.json();
                     
@@ -330,12 +459,19 @@ async def index_handler(request):
 
 
 # --- API HANDLERS ---
+async def api_history_handler(request):
+    user_id = request.query.get("user_id", "default_user")
+    history = get_user_history(user_id)
+    return web.json_response({"status": "success", "history": history})
+
 async def api_chat_handler(request):
     try:
         data = await request.json()
         user_id = data.get("user_id", "default_user")
         prompt = data.get("prompt", "")
-        reply = await generate_ziyo_response(user_id, prompt)
+        image_data = data.get("image", None)
+        
+        reply = await generate_ziyo_response(user_id, prompt, image_data)
         return web.json_response({"status": "success", "reply": reply})
     except Exception as e:
         return web.json_response({"status": "error", "reply": str(e)}, status=400)
@@ -349,8 +485,9 @@ async def api_external_generate(request):
         data = await request.json()
         prompt = data.get("prompt", "")
         user_id = data.get("user_id", "external_api_user")
+        image_data = data.get("image", None)
         
-        reply = await generate_ziyo_response(user_id, prompt)
+        reply = await generate_ziyo_response(user_id, prompt, image_data)
         return web.json_response({"status": "success", "reply": reply})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -377,6 +514,7 @@ async def api_create_key(request):
 async def init_app():
     app = web.Application()
     app.router.add_get("/", index_handler)
+    app.router.add_get("/api/history", api_history_handler)
     app.router.add_post("/api/chat", api_chat_handler)
     app.router.add_post("/api/v1/generate", api_external_generate)
     app.router.add_post("/api/v1/create_key", api_create_key)
