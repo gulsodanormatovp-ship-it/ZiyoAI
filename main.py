@@ -86,15 +86,24 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
     text = prompt.lower().strip()
     save_message(user_id, "user", prompt)
     
-    # 1. Rasm yaratish moduli (Dahshatli va mukammal sifat uchun avtomatik bezatish)
+    # 1. Rasm yaratish moduli (Foydalanuvchi xohlagan narsani aniq ajratib olish va dahshatli sifat berish)
     if any(w in text for w in ["rasm", "chiz", "generation", "image", "foto", "draw", "surat"]):
-        # Foydalanuvchi so'ziga o'zimizdan dahshatli vizual elementlarni qo'shamiz
-        enhanced_prompt = f"{prompt}, hyperrealistic, 8k resolution, cinematic lighting, masterpiece, ultra-detailed, dramatic lighting, unreal engine 5 render"
+        # Ortiqcha so'zlarni tozalab, faqat mavzuning o'zini qoldiramiz
+        clean_prompt = prompt
+        for word in ["rasmini chiz", "rasm chiz", "chizib ber", "chiz", "rasm", "surat", "foto", "image"]:
+            clean_prompt = clean_prompt.replace(word, "")
+        clean_prompt = clean_prompt.strip(" ,.-!").strip()
+        
+        if not clean_prompt:
+            clean_prompt = "futuristic cyberpunk city"
+
+        # AI uchun dahshatli professional detallar qo'shamiz
+        enhanced_prompt = f"{clean_prompt}, hyperrealistic, 8k resolution, cinematic lighting, masterpiece, ultra-detailed, dramatic shadows, unreal engine 5 render"
         encoded_prompt = enhanced_prompt.replace(" ", "%20")
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
         
-        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Sizning so'rovingiz asosida mukammal sifatda rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'>"
-        save_message(user_id, "assistant", "[Dahshatli rasm yaratildi]")
+        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida mukammal sifatda rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'>"
+        save_message(user_id, "assistant", f"[Rasm yaratildi: {clean_prompt}]")
         return reply
 
     # 2. Internetdan qidirish moduli
@@ -107,19 +116,19 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
 
     # 3. Oddiy savollar va muloqot
     if "salom" in text or "assalomu alaykum" in text:
-        reply = "Assalomu alaykum! Men ZiyoAI — mustaqil intellektual tizimman. Xohlasangiz ovoz bilan gaplashing, xohlasangiz dahshatli rasmlar chizishni buyuring!"
+        reply = "Assalomu alaykum! Men ZiyoAI — mustaqil intellektual tizimman. Xohlasangiz ovoz bilan gaplashing, xohlasangiz xohlagan narsangizni dahshatli formatda chizishni buyuring!"
     elif "python" in text:
         reply = "Python orqali biz shunday ulkan tizimlarni noldan o'zimiz quramiz. Bu eng qudratli dasturlash tili!"
     elif "sen kimsan" in text or "ziyoai" in text:
         reply = "Men ZiyoAI man. Hech qanday chet el pullik API'lariga bog'lanmagan, o'zimizning mustaqil serverimizda ishlaydigan mukammal tizimman."
     else:
-        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha tizim chuqur tahlil o'tkazdi. Bu yo'nalishda eng ilg'or yechimlarni qo'llash maqsadga muvofiq. Savolingizni yanada aniqroq bersangiz, to'liqroq ma'lumot beraman!"
+        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha tizim tahlil o'tkazdi. Savolingiz yoki buyrug'ingiz qabul qilindi!"
 
     save_message(user_id, "assistant", reply)
     return reply
 
 
-# --- WEB INTERFEYS (Ovozli boshqaruv va dahshatli dizayn) ---
+# --- WEB INTERFEYS ---
 async def index_handler(request):
     html_content = """
     <!DOCTYPE html>
@@ -142,7 +151,6 @@ async def index_handler(request):
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
             body { background: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; overflow: hidden; }
             
-            /* Sidebar */
             .sidebar { width: 280px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border-color); padding: 16px; z-index: 10; transition: 0.3s; }
             .brand { font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
             .new-chat-btn { background: #282a2c; border: 1px solid var(--border-color); color: var(--text-color); padding: 12px; border-radius: 12px; cursor: pointer; text-align: left; font-size: 14px; transition: 0.2s; font-weight: 500; display: flex; align-items: center; gap: 8px; }
@@ -151,11 +159,9 @@ async def index_handler(request):
             .features-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--text-secondary); }
             .feature-item { padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.05); }
 
-            /* Main Container */
             .main-container { flex: 1; display: flex; flex-direction: column; height: 100vh; background: var(--bg-color); position: relative; overflow: hidden; }
             .chat-header { padding: 16px 24px; border-bottom: 1px solid var(--border-color); font-size: 16px; font-weight: 600; color: #ffffff; display: flex; justify-content: space-between; align-items: center; background: var(--bg-color); }
             
-            /* Chat Messages */
             .chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; width: 100%; max-width: 900px; margin: 0 auto; scroll-behavior: smooth; }
             .message-wrapper { display: flex; gap: 16px; width: 100%; line-height: 1.6; font-size: 15px; animation: fadeIn 0.3s ease; }
             @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -165,7 +171,6 @@ async def index_handler(request):
             .ai-avatar { background: linear-gradient(135deg, #8ab4f8, #c58af9); color: #131314; }
             .message-content { flex: 1; padding-top: 6px; word-break: break-word; color: var(--text-color); }
             
-            /* Input Area */
             .input-area { padding: 16px 20px 24px 20px; width: 100%; max-width: 900px; margin: 0 auto; background: var(--bg-color); }
             .input-box { display: flex; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 24px; padding: 10px 16px; align-items: center; gap: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
             .input-box textarea { flex: 1; background: transparent; border: none; color: white; font-size: 15px; outline: none; resize: none; max-height: 150px; font-family: inherit; }
@@ -179,7 +184,6 @@ async def index_handler(request):
             .send-btn { background: var(--accent-color); color: #131314; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s; flex-shrink: 0; }
             .send-btn:hover { opacity: 0.9; transform: scale(1.05); }
 
-            /* Mobile Adaptation */
             @media (max-width: 768px) {
                 .sidebar { display: none; }
                 .chat-messages { padding: 15px; gap: 16px; }
@@ -202,15 +206,15 @@ async def index_handler(request):
         
         <div class="main-container">
             <div class="chat-header">
-                <span>ZiyoAI Markaziy Tizimi v4.0</span>
-                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">Ovozli va Vizual Rejim</span>
+                <span>ZiyoAI Markaziy Tizimi v5.0</span>
+                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">To'liq Faol Rejim</span>
             </div>
             
             <div class="chat-messages" id="messages">
                 <div class="message-wrapper">
                     <div class="avatar ai-avatar">Z</div>
                     <div class="message-content">
-                        <b>ZiyoAI:</b> Assalomu alaykum! Ovozli gaplashish, dahshatli rasmlar yaratish va internetdan qidirish modullarim to'liq ishga tushdi. Mikrofon tugmasini bosing yoki xabar yozing!
+                        <b>ZiyoAI:</b> Assalomu alaykum! Endi nima buyursangiz, aynan o'shani dahshatli va mukammal formatda chizib beraman. Marhamat, sinab ko'ring!
                     </div>
                 </div>
             </div>
@@ -218,7 +222,7 @@ async def index_handler(request):
             <div class="input-area">
                 <div class="input-box">
                     <button class="action-btn" id="micBtn" onclick="toggleSpeechRecognition()" title="Ovoz bilan gaplashish">🎤</button>
-                    <textarea id="userInput" rows="1" placeholder="ZiyoAI dan nimanidir so'rang yoki rasm chizishni buyuring..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
+                    <textarea id="userInput" rows="1" placeholder="Masalan: 'Qora sport mashina garajda' yoki 'Qor bosgan tog'..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
                     <button class="send-btn" onclick="sendMessage()">➔</button>
                 </div>
             </div>
@@ -229,13 +233,12 @@ async def index_handler(request):
             let recognition;
             let isListening = false;
 
-            // Ovozni matnga o'girish (Speech-to-Text)
             function toggleSpeechRecognition() {
                 const micBtn = document.getElementById('micBtn');
                 const input = document.getElementById('userInput');
 
                 if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                    alert("Sizning brauzeringiz ovozli qidirishni qo'llab-quvvatlamaydi. Chrome yoki Safari'dan foydalaning.");
+                    alert("Brauzeringiz ovozli qidirishni qo'llab-quvvatlamaydi.");
                     return;
                 }
 
@@ -247,7 +250,7 @@ async def index_handler(request):
                 }
 
                 recognition = new SpeechRecognition();
-                recognition.lang = 'uz-UZ'; // O'zbek tili
+                recognition.lang = 'uz-UZ';
                 recognition.interimResults = false;
                 recognition.maxAlternatives = 1;
 
@@ -263,27 +266,19 @@ async def index_handler(request):
                     sendMessage();
                 };
 
-                recognition.onerror = () => {
-                    stopListeningState();
-                };
-
-                recognition.onend = () => {
-                    stopListeningState();
-                };
-
+                recognition.onerror = () => { stopListeningState(); };
+                recognition.onend = () => { stopListeningState(); };
                 recognition.start();
             }
 
             function stopListeningState() {
                 isListening = false;
                 document.getElementById('micBtn').classList.remove('listening');
-                document.getElementById('userInput').placeholder = "ZiyoAI dan nimanidir so'rang yoki rasm chizishni buyuring...";
+                document.getElementById('userInput').placeholder = "Masalan: 'Qora sport mashina garajda'...";
             }
 
-            // AI javobini ovoz chiqarib o'qish (Text-to-Speech)
             function speakText(text) {
                 if ('speechSynthesis' in window) {
-                    // HTML teglarini tozalab faqat matnni o'qish uchun
                     const cleanText = text.replace(/<[^>]*>?/gm, '');
                     const utterance = new SpeechSynthesisUtterance(cleanText);
                     utterance.lang = 'uz-UZ';
@@ -326,13 +321,12 @@ async def index_handler(request):
                         <div class="avatar ai-avatar">Z</div>
                         <div class="message-content"><b>ZiyoAI:</b> ${data.reply}</div>`;
                     
-                    // Ovozli javob berish
                     speakText(data.reply);
 
                 } catch (err) {
                     document.getElementById(loadingId).innerHTML = `
                         <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: #ff8ab4;">Tarmoqda xatolik yuz berdi, qayta urinib ko'ring.</div>`;
+                        <div class="message-content" style="color: #ff8ab4;">Tarmoqda xatolik yuz berdi.</div>`;
                 }
                 messages.scrollTop = messages.scrollHeight;
             }
