@@ -86,12 +86,15 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
     text = prompt.lower().strip()
     save_message(user_id, "user", prompt)
     
-    # 1. Rasm yaratish moduli (Real AI Image Generation Gateway)
+    # 1. Rasm yaratish moduli (Dahshatli va mukammal sifat uchun avtomatik bezatish)
     if any(w in text for w in ["rasm", "chiz", "generation", "image", "foto", "draw", "surat"]):
-        encoded_prompt = prompt.replace(" ", "%20")
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
-        reply = f"🎨 <b>ZiyoAI Vizual Markazi:</b><br>Sizning so'rovingiz bo'yicha maxsus rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);'>"
-        save_message(user_id, "assistant", "[Rasm yaratildi]")
+        # Foydalanuvchi so'ziga o'zimizdan dahshatli vizual elementlarni qo'shamiz
+        enhanced_prompt = f"{prompt}, hyperrealistic, 8k resolution, cinematic lighting, masterpiece, ultra-detailed, dramatic lighting, unreal engine 5 render"
+        encoded_prompt = enhanced_prompt.replace(" ", "%20")
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
+        
+        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Sizning so'rovingiz asosida mukammal sifatda rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'>"
+        save_message(user_id, "assistant", "[Dahshatli rasm yaratildi]")
         return reply
 
     # 2. Internetdan qidirish moduli
@@ -102,21 +105,21 @@ async def generate_ziyo_response(user_id: str, prompt: str) -> str:
             save_message(user_id, "assistant", reply)
             return reply
 
-    # 3. Odatiy savollar va xotiraga asoslangan javoblar
+    # 3. Oddiy savollar va muloqot
     if "salom" in text or "assalomu alaykum" in text:
-        reply = "Assalomu alaykum! ZiyoAI to'liq quvvatda ishga tushdi. Menga istalgan savolni bering, internetdan qidirib topaman yoki rasm chizib beraman!"
+        reply = "Assalomu alaykum! Men ZiyoAI — mustaqil intellektual tizimman. Xohlasangiz ovoz bilan gaplashing, xohlasangiz dahshatli rasmlar chizishni buyuring!"
     elif "python" in text:
-        reply = "Python — dunyodagi eng mashhur va qudratli tillardan biri. ZiyoAI tizimining o'zi ham Python va aiohttp yordamida yaratilgan."
+        reply = "Python orqali biz shunday ulkan tizimlarni noldan o'zimiz quramiz. Bu eng qudratli dasturlash tili!"
     elif "sen kimsan" in text or "ziyoai" in text:
-        reply = "Men ZiyoAI — hech qanday begona pullik xizmatlarga bog'lanmagan, o'zimizning mustaqil serverimizda ishlaydigan sun'iy intellekt ekotizimiman."
+        reply = "Men ZiyoAI man. Hech qanday chet el pullik API'lariga bog'lanmagan, o'zimizning mustaqil serverimizda ishlaydigan mukammal tizimman."
     else:
-        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha so'rovingiz qabul qilindi. Xotira bazasi tahlil qilindi. Qo'shimcha ma'lumot uchun 'qidir' yoki 'rasm' so'zlarini qo'shib yuborishingiz mumkin."
+        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha tizim chuqur tahlil o'tkazdi. Bu yo'nalishda eng ilg'or yechimlarni qo'llash maqsadga muvofiq. Savolingizni yanada aniqroq bersangiz, to'liqroq ma'lumot beraman!"
 
     save_message(user_id, "assistant", reply)
     return reply
 
 
-# --- WEB INTERFEYS (Mukammal Responsive Dizayn) ---
+# --- WEB INTERFEYS (Ovozli boshqaruv va dahshatli dizayn) ---
 async def index_handler(request):
     html_content = """
     <!DOCTYPE html>
@@ -164,10 +167,17 @@ async def index_handler(request):
             
             /* Input Area */
             .input-area { padding: 16px 20px 24px 20px; width: 100%; max-width: 900px; margin: 0 auto; background: var(--bg-color); }
-            .input-box { display: flex; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 24px; padding: 12px 20px; align-items: center; gap: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+            .input-box { display: flex; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 24px; padding: 10px 16px; align-items: center; gap: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
             .input-box textarea { flex: 1; background: transparent; border: none; color: white; font-size: 15px; outline: none; resize: none; max-height: 150px; font-family: inherit; }
-            .input-box button { background: var(--accent-color); color: #131314; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s; flex-shrink: 0; }
-            .input-box button:hover { opacity: 0.9; transform: scale(1.05); }
+            
+            .action-btn { background: transparent; border: none; color: var(--text-secondary); width: 38px; height: 38px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; font-size: 18px; }
+            .action-btn:hover { background: var(--hover-bg); color: white; }
+            .action-btn.listening { color: #ff5252; background: rgba(255,82,82,0.1); animation: pulse 1.5s infinite; }
+            
+            @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+
+            .send-btn { background: var(--accent-color); color: #131314; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s; flex-shrink: 0; }
+            .send-btn:hover { opacity: 0.9; transform: scale(1.05); }
 
             /* Mobile Adaptation */
             @media (max-width: 768px) {
@@ -185,36 +195,102 @@ async def index_handler(request):
             <div class="features-list">
                 <div class="feature-item">🧠 Cheksiz Xotira (SQLite)</div>
                 <div class="feature-item">🌐 Real vaqtda Qidiruv</div>
-                <div class="feature-item">🎨 AI Rasm Generatsiya</div>
-                <div class="feature-item">🔌 Ochiq API Tizimi</div>
+                <div class="feature-item">🎨 Dahshat AI Rasm Gateway</div>
+                <div class="feature-item">🎤 Ovozli Muloqot (Speech)</div>
             </div>
         </div>
         
         <div class="main-container">
             <div class="chat-header">
-                <span>ZiyoAI Markaziy Tizimi v3.0</span>
-                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">Faol Server</span>
+                <span>ZiyoAI Markaziy Tizimi v4.0</span>
+                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">Ovozli va Vizual Rejim</span>
             </div>
             
             <div class="chat-messages" id="messages">
                 <div class="message-wrapper">
                     <div class="avatar ai-avatar">Z</div>
                     <div class="message-content">
-                        <b>ZiyoAI:</b> Assalomu alaykum! Xotiram, internet qidiruvim va rasm yaratish modullarim to'liq ishga tushdi. Menga istalgan savolni bering yoki rasm chizishni buyuring!
+                        <b>ZiyoAI:</b> Assalomu alaykum! Ovozli gaplashish, dahshatli rasmlar yaratish va internetdan qidirish modullarim to'liq ishga tushdi. Mikrofon tugmasini bosing yoki xabar yozing!
                     </div>
                 </div>
             </div>
             
             <div class="input-area">
                 <div class="input-box">
+                    <button class="action-btn" id="micBtn" onclick="toggleSpeechRecognition()" title="Ovoz bilan gaplashish">🎤</button>
                     <textarea id="userInput" rows="1" placeholder="ZiyoAI dan nimanidir so'rang yoki rasm chizishni buyuring..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
-                    <button onclick="sendMessage()">➔</button>
+                    <button class="send-btn" onclick="sendMessage()">➔</button>
                 </div>
             </div>
         </div>
 
         <script>
             const userId = 'user-' + Math.random().toString(36).substring(2, 9);
+            let recognition;
+            let isListening = false;
+
+            // Ovozni matnga o'girish (Speech-to-Text)
+            function toggleSpeechRecognition() {
+                const micBtn = document.getElementById('micBtn');
+                const input = document.getElementById('userInput');
+
+                if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                    alert("Sizning brauzeringiz ovozli qidirishni qo'llab-quvvatlamaydi. Chrome yoki Safari'dan foydalaning.");
+                    return;
+                }
+
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                
+                if (isListening) {
+                    recognition.stop();
+                    return;
+                }
+
+                recognition = new SpeechRecognition();
+                recognition.lang = 'uz-UZ'; // O'zbek tili
+                recognition.interimResults = false;
+                recognition.maxAlternatives = 1;
+
+                recognition.onstart = () => {
+                    isListening = true;
+                    micBtn.classList.add('listening');
+                    input.placeholder = "Eshitayapman, gapiring...";
+                };
+
+                recognition.onresult = (event) => {
+                    const speechText = event.results[0][0].transcript;
+                    input.value = speechText;
+                    sendMessage();
+                };
+
+                recognition.onerror = () => {
+                    stopListeningState();
+                };
+
+                recognition.onend = () => {
+                    stopListeningState();
+                };
+
+                recognition.start();
+            }
+
+            function stopListeningState() {
+                isListening = false;
+                document.getElementById('micBtn').classList.remove('listening');
+                document.getElementById('userInput').placeholder = "ZiyoAI dan nimanidir so'rang yoki rasm chizishni buyuring...";
+            }
+
+            // AI javobini ovoz chiqarib o'qish (Text-to-Speech)
+            function speakText(text) {
+                if ('speechSynthesis' in window) {
+                    // HTML teglarini tozalab faqat matnni o'qish uchun
+                    const cleanText = text.replace(/<[^>]*>?/gm, '');
+                    const utterance = new SpeechSynthesisUtterance(cleanText);
+                    utterance.lang = 'uz-UZ';
+                    utterance.rate = 1.0;
+                    window.speechSynthesis.speak(utterance);
+                }
+            }
 
             async function sendMessage() {
                 const input = document.getElementById('userInput');
@@ -222,7 +298,6 @@ async def index_handler(request):
                 const text = input.value.trim();
                 if(!text) return;
 
-                // Foydalanuvchi xabari
                 messages.innerHTML += `
                     <div class="message-wrapper">
                         <div class="avatar user-avatar">S</div>
@@ -231,12 +306,11 @@ async def index_handler(request):
                 input.value = '';
                 messages.scrollTop = messages.scrollHeight;
 
-                // Yuklanmoqda...
                 const loadingId = 'loading-' + Date.now();
                 messages.innerHTML += `
                     <div class="message-wrapper" id="${loadingId}">
                         <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI tahlil qilmoqda, internetdan izlamoqda yoki rasm yaratmoqda...</div>
+                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI dahshatli natija tayyorlamoqda...</div>
                     </div>`;
                 messages.scrollTop = messages.scrollHeight;
 
@@ -247,9 +321,14 @@ async def index_handler(request):
                         body: JSON.stringify({user_id: userId, prompt: text})
                     });
                     const data = await response.json();
+                    
                     document.getElementById(loadingId).innerHTML = `
                         <div class="avatar ai-avatar">Z</div>
                         <div class="message-content"><b>ZiyoAI:</b> ${data.reply}</div>`;
+                    
+                    // Ovozli javob berish
+                    speakText(data.reply);
+
                 } catch (err) {
                     document.getElementById(loadingId).innerHTML = `
                         <div class="avatar ai-avatar">Z</div>
