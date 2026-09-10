@@ -95,19 +95,20 @@ async def generate_ziyo_response(user_id: str, prompt: str, image_data: str = No
 
     save_message(user_id, "user", prompt)
     
-    # 1. Video / Animatsiya yaratish moduli
-    if any(w in text for w in ["video", "animatsiya", "kino", "klip", "gif"]):
+    # 1. Video / Animatsiya / Dinamik kontent yaratish moduli
+    if any(w in text for w in ["video", "animatsiya", "kino", "klip", "gif", "harakatlanuvchi"]):
         clean_prompt = prompt
-        for word in ["video", "kino", "animatsiya", "klip", "gif", "chiz", "qil", "ber", "yarat"]:
+        for word in ["video", "kino", "animatsiya", "klip", "gif", "chiz", "qil", "ber", "yarat", "harakatlanuvchi"]:
             clean_prompt = clean_prompt.replace(word, "")
         clean_prompt = clean_prompt.strip(" ,.-!").strip()
         if not clean_prompt or len(clean_prompt) < 2:
-            clean_prompt = "futuristic cinematic motion loop"
+            clean_prompt = "cinematic dynamic motion loop"
 
-        encoded_prompt = urllib.parse.quote(f"animation {clean_prompt}, high quality")
-        video_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
+        # Universal video/animatsiya formatlash va generatorga yo'naltirish
+        encoded_prompt = urllib.parse.quote(f"cinematic animation, {clean_prompt}, high motion, stunning visual details")
+        video_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true&seed={os.urandom(2).hex()}"
         
-        reply = f"🎬 <b>ZiyoAI Video Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida video/animatsiya tayyorlandi:<br><br><img src='{video_url}' alt='ZiyoAI Video' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'><br><div style='font-size: 11px; color: #888; margin-top: 6px;'>ZiyoAI orqali yaratildi</div>"
+        reply = f"🎬 <b>ZiyoAI Video Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusidagi maxsus video/animatsiya tayyorlandi:<br><br><img src='{video_url}' alt='ZiyoAI Video' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'><br><div style='font-size: 11px; color: #888; margin-top: 6px;'>ZiyoAI orqali yaratildi</div>"
         save_message(user_id, "assistant", reply)
         return reply
 
@@ -119,13 +120,13 @@ async def generate_ziyo_response(user_id: str, prompt: str, image_data: str = No
         
         clean_prompt = clean_prompt.split(".")[0].split("yoki")[0].strip(" ,.-!").strip()
         if not clean_prompt or len(clean_prompt) < 2:
-            clean_prompt = "cyberpunk futuristic car"
+            clean_prompt = "cyberpunk futuristic landscape"
 
         enhanced_prompt = f"{clean_prompt}, hyperrealistic, 8k resolution, cinematic lighting"
         encoded_prompt = urllib.parse.quote(enhanced_prompt)
         image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
         
-        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'><br><div style='font-size: 11px; color: #888; margin-top: 6px;'>ZiyoAI orqali yaratildi</div>"
+        reply = f"🎨 <b>ZiyoAI Vizual Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'><br><div style='font-size: 11px; color: #888; margin-top: 6px;'>ZiyoAI orqali yaratildi</div>"
         save_message(user_id, "assistant", reply)
         return reply
 
@@ -139,11 +140,11 @@ async def generate_ziyo_response(user_id: str, prompt: str, image_data: str = No
 
     # 4. Oddiy muloqot
     if "salom" in text or "assalomu alaykum" in text:
-        reply = "Assalomu alaykum! ZiyoAI tayyor. Nima chizib yoki video qilib berishimni xohlaysiz?"
+        reply = "Assalomu alaykum! ZiyoAI tayyor. Qanday rasm yoki video xohlaysiz, marhamat buyurtma bering!"
     elif "python" in text:
-        reply = "Python — eng kuchli dasturlash tili."
+        reply = "Python — eng ommabop va kuchli dasturlash tillaridan biri."
     elif "sen kimsan" in text or "ziyoai" in text:
-        reply = "Men ZiyoAI man, mustaqil intellektual tizim."
+        reply = "Men ZiyoAI man, sizning shaxsiy intellektual yordamchingiz va ijodiy studiyangizman."
     else:
         reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha so'rovingiz qabul qilindi!"
 
@@ -274,7 +275,6 @@ async def index_handler(request):
             let isListening = false;
             let currentImageBase64 = null;
 
-            // Suhbat tarixini yuklab kelish
             async function loadHistory() {
                 try {
                     const res = await fetch(`/api/history?user_id=${userId}`);
@@ -295,7 +295,7 @@ async def index_handler(request):
                         messagesDiv.innerHTML += `
                             <div class="message-wrapper">
                                 <div class="avatar ai-avatar">Z</div>
-                                <div class="message-content"><b>ZiyoAI:</b> Assalomu alaykum! Xush kelibsiz. Yozishmalaringiz saqlanib boradi.</div>
+                                <div class="message-content"><b>ZiyoAI:</b> Assalomu alaykum! Xush kelibsiz. Qanday video yoki rasm tayyorlab berishimni xohlaysiz?</div>
                             </div>`;
                     }
                     messagesDiv.scrollTop = messagesDiv.scrollHeight;
@@ -426,7 +426,7 @@ async def index_handler(request):
                 messages.innerHTML += `
                     <div class="message-wrapper" id="${loadingId}">
                         <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI tahlil qilmoqda...</div>
+                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI tayyorlamoqda...</div>
                     </div>`;
                 messages.scrollTop = messages.scrollHeight;
 
@@ -505,7 +505,8 @@ async def api_create_key(request):
         conn.commit()
         conn.close()
         
-        return web.json_response({"status": "success", "api_key": new_key, "owner": owner})
+        id_data = {"status": "success", "api_key": new_key, "owner": owner}
+        return web.json_response(id_data)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=400)
 
