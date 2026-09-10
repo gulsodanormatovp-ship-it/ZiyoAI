@@ -124,7 +124,7 @@ async def get_ai_response(user_id: str, prompt: str) -> str:
 
             chat_completion = await groq_client.chat.completions.create(
                 messages=messages,
-                model="llama-3.1-70b-versatile",
+                model="llama-3.1-8b-instant",
                 temperature=0.7,
                 max_tokens=1000
             )
