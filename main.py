@@ -7,13 +7,35 @@ import urllib.parse
 from aiohttp import web
 from duckduckgo_search import DDGS
 
+# --- KUTUBXONALARNI TEKSHIRISH ---
+try:
+    from groq import AsyncGroq
+except ImportError:
+    AsyncGroq = None
+    logging.warning("Groq kutubxonasi topilmadi. Faqat qidiruv va rasm ishlaysiz.")
+
 # Logging sozlamasi
 logging.basicConfig(level=logging.INFO)
 
+# --- API KALITLARINI OLISH (Render Environment Variables'dan) ---
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+# Agar kalit bo'lmasa, Groq qismi ishlamaydi, lekin qolganlari ishlaydi
+if GROQ_API_KEY and AsyncGroq:
+    groq_client = AsyncGroq(api_key=GROQ_API_KEY)
+    logging.info("Groq mijoz ishga tushdi.")
+else:
+    groq_client = None
+    if not GROQ_API_KEY: logging.warning("GROQ_API_KEY topilmadi.")
+
+
 # --- BAZA VA XOTIRA TIZIMI (SQLite) ---
+DB_NAME = "ziyo_core.db"
+
 def init_db():
-    conn = sqlite3.connect("ziyo_core.db")
+    """Baza va jadvallarni yaratadi"""
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    # Suhbatlar tarixi
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS memory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,366 +45,207 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # API kalitlari
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS api_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             api_key TEXT UNIQUE,
             owner TEXT,
-            requests_count INTEGER DEFAULT 0
+            requests_count INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT 1
         )
     """)
+    # Boshlang'ich admin kaliti (agar bo'lmasa)
+    cursor.execute("SELECT api_key FROM api_keys WHERE owner = 'Admin' LIMIT 1")
+    if not cursor.fetchone():
+        admin_key = "ziyo_admin_dev_key" # Buni o'zingiz o'zgartiring!
+        cursor.execute("INSERT INTO api_keys (api_key, owner) VALUES (?, ?)", (admin_key, "Admin"))
+        logging.info(f"Admin kaliti yaratildi: {admin_key}")
+
     conn.commit()
     conn.close()
 
 init_db()
 
 def save_message(user_id: str, role: str, content: str):
-    conn = sqlite3.connect("ziyo_core.db")
+    """Xabarni bazaga saqlaydi"""
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO memory (user_id, role, content) VALUES (?, ?, ?)", (user_id, role, content))
     conn.commit()
     conn.close()
 
-def validate_api_key(api_key: str) -> bool:
-    if not api_key:
-        return False
-    conn = sqlite3.connect("ziyo_core.db")
+def get_chat_history(user_id: str, limit: int = 10):
+    """Oxirgi suhbatni bazadan o'qiydi"""
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM api_keys WHERE api_key = ?", (api_key,))
+    cursor.execute(
+        "SELECT role, content FROM memory WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+        (user_id, limit)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"role": row[0], "content": row[1]} for row in rows[::-1]] # Teskari o'girish
+
+def validate_api_key(api_key: str) -> bool:
+    """API kalitini tekshiradi va hisoblagichni oshiradi"""
+    if not api_key or not api_key.startswith("ziyo_"):
+        return False
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM api_keys WHERE api_key = ? AND is_active = 1", (api_key,))
     row = cursor.fetchone()
     if row:
         cursor.execute("UPDATE api_keys SET requests_count = requests_count + 1 WHERE api_key = ?", (api_key,))
         conn.commit()
+        conn.close()
+        return True
     conn.close()
-    return row is not None
+    return False
 
 
-# --- INTERNETDAN QIDIRISH MANTIG'I ---
-def search_web(query: str) -> str:
+# --- INTERNETDAN QIDIRISH ---
+def search_web_sync(query: str) -> str:
+    """DuckDuckGo orqali qidirish"""
     try:
         with DDGS() as ddgs:
             results = [r for r in ddgs.text(query, max_results=3)]
             if results:
                 snippets = []
                 for r in results:
-                    title = r.get('title', '')
-                    body = r.get('body', '')
-                    snippets.append(f"<b>{title}</b><br>{body}")
+                    snippets.append(f"<b>{r.get('title')}</b><br>{r.get('body')}")
                 return "<br><br>".join(snippets)
     except Exception as e:
-        logging.error(f"Web search error: {e}")
-    return ""
+        logging.error(f"DDGS Error: {e}")
+    return "Kechirasiz, internetdan ma'lumot topilmadi."
 
 
-# --- ASOSIY INTELLEKTUAL MARKAZ ---
-async def generate_ziyo_response(user_id: str, prompt: str) -> str:
+# --- ASOSIY INTELLEKTUAL MARKAZ (AI GATEWAY) ---
+async def get_ai_response(user_id: str, prompt: str) -> str:
+    """Matn, Rasm yoki Qidiruvni aniqlab javob beradi"""
     text = prompt.lower().strip()
-    save_message(user_id, "user", prompt)
-    
-    # 1. Rasm yaratish moduli
-    if any(w in text for w in ["rasm", "chiz", "generation", "image", "foto", "draw", "surat"]):
-        clean_prompt = prompt
-        for word in ["rasmini chiz", "rasm chiz", "chizib ber", "chiz", "rasm", "surat", "foto", "image", "yoki", "va"]:
-            clean_prompt = clean_prompt.replace(word, "")
-        
-        clean_prompt = clean_prompt.split(".")[0].split("yoki")[0].strip(" ,.-!").strip()
-        
-        if not clean_prompt or len(clean_prompt) < 2:
-            clean_prompt = "cyberpunk futuristic car"
+    save_message(user_id, "user", prompt) # User xabarini saqlash
 
-        enhanced_prompt = f"{clean_prompt}, hyperrealistic, 8k resolution, cinematic lighting"
-        encoded_prompt = urllib.parse.quote(enhanced_prompt)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1280&height=720&nologo=true"
-        
-        reply = f"🎨 <b>ZiyoAI Dahshat Vizual Markazi:</b><br>Siz talab qilgan <b>'{clean_prompt}'</b> mavzusida rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);'>"
-        save_message(user_id, "assistant", f"[Rasm yaratildi: {clean_prompt}]")
+    # 1. Rasm yaratish so'rovi
+    if any(w in text for w in ["rasm", "chiz", "draw", "image", "surat"]):
+        clean_prompt = prompt.replace("rasmini chiz", "").replace("rasm chiz", "").replace("chizib ber", "").strip(" ,.")
+        encoded_prompt = urllib.parse.quote(clean_prompt)
+        # Pollinations.ai dan foydalanamiz (bepul)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true"
+        reply = f"🎨 <b>ZiyoAI Vizual Markazi:</b><br>Siz so'ragan rasm: <i>{clean_prompt}</i><br><br><img src='{image_url}' style='max-width:100%; border-radius:10px;'>"
+        save_message(user_id, "assistant", reply)
         return reply
 
-    # 2. Internetdan qidirish moduli
-    if any(w in text for w in ["qidir", "internet", "yangilik", "kim", "nima", "qayerda", "ob-havo", "weather", "2026"]):
-        search_result = search_web(prompt)
-        if search_result:
-            reply = f"🌐 <b>Internetdan topilgan ma'lumotlar:</b><br><br>{search_result}"
-            save_message(user_id, "assistant", reply)
-            return reply
+    # 2. Internetdan qidirish so'rovi
+    if any(w in text for w in ["qidir", "internet", "yangilik", "nima bu", "kim"]) or text.startswith(("qachon", "qayerda")):
+        search_results = await asyncio.to_thread(search_web_sync, prompt)
+        reply = f"🌐 <b>Internetdan topilgan ma'lumotlar:</b><br><br>{search_results}"
+        save_message(user_id, "assistant", reply)
+        return reply
 
-    # 3. Oddiy muloqot
-    if "salom" in text or "assalomu alaykum" in text:
-        reply = "Assalomu alaykum! ZiyoAI tayyor. Nima chizib berishimni xohlaysiz?"
-    elif "python" in text:
-        reply = "Python — eng kuchli dasturlash tili."
-    elif "sen kimsan" in text or "ziyoai" in text:
-        reply = "Men ZiyoAI man, mustaqil intellektual tizim."
+    # 3. Oddiy suhbat (Groq/LLM)
+    if groq_client:
+        try:
+            history = get_chat_history(user_id)
+            # Tizim instruksiyasi
+            messages = [
+                {"role": "system", "content": "Siz ZiyoAI ismli aqlli yordamchisz. O'zbekistonlik dasturchi tomonidan yaratilgansiz. O'zbek tilida mukammal javob bering."},
+            ] + history + [{"role": "user", "content": prompt}]
+
+            chat_completion = await groq_client.chat.completions.create(
+                messages=messages,
+                model="llama3-70b-8192",
+                temperature=0.7,
+                max_tokens=1000
+            )
+            reply = chat_completion.choices[0].message.content
+        except Exception as e:
+            logging.error(f"Groq Error: {e}")
+            reply = "Kechirasiz, fikrlash markazida xatolik yuz berdi."
     else:
-        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha so'rovingiz qabul qilindi!"
+        reply = "ZiyoAI faqat rasm chizish va qidirish rejimida (Groq kaliti ulanmagan)."
 
     save_message(user_id, "assistant", reply)
     return reply
 
 
-# --- WEB INTERFEYS ---
-async def index_handler(request):
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="uz">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ZiyoAI - Mustaqil Intellektual Ekotizim</title>
-        <style>
-            :root {
-                --bg-color: #131314;
-                --sidebar-bg: #1e1f20;
-                --panel-bg: #1e1f20;
-                --text-color: #e3e3e3;
-                --text-secondary: #c4c7c5;
-                --border-color: #3c4043;
-                --accent-color: #8ab4f8;
-                --hover-bg: #2d2e30;
-            }
-            * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-            body { background: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; overflow: hidden; }
-            
-            .sidebar { width: 280px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border-color); padding: 16px; z-index: 10; transition: 0.3s; }
-            .brand { font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
-            .new-chat-btn { background: #282a2c; border: 1px solid var(--border-color); color: var(--text-color); padding: 12px; border-radius: 12px; cursor: pointer; text-align: left; font-size: 14px; transition: 0.2s; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-            .new-chat-btn:hover { background: var(--hover-bg); }
-            
-            .features-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--text-secondary); }
-            .feature-item { padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.05); }
+# --- WEB INTERFEYS (HTML, CSS, JS) ---
+INDEX_HTML = """
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ZiyoAI Platformasi</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --chat-bg: #242424;
+            --text-color: #e0e0e0;
+            --sidebar-bg: #121212;
+            --accent-color: #4caf50;
+            --user-msg-bg: #333;
+            --ai-msg-bg: #2a2a2a;
+        }
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; overflow: hidden; }
 
-            .main-container { flex: 1; display: flex; flex-direction: column; height: 100vh; background: var(--bg-color); position: relative; overflow: hidden; }
-            .chat-header { padding: 16px 24px; border-bottom: 1px solid var(--border-color); font-size: 16px; font-weight: 600; color: #ffffff; display: flex; justify-content: space-between; align-items: center; background: var(--bg-color); }
-            
-            .chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; width: 100%; max-width: 900px; margin: 0 auto; scroll-behavior: smooth; }
-            .message-wrapper { display: flex; gap: 16px; width: 100%; line-height: 1.6; font-size: 15px; animation: fadeIn 0.3s ease; }
-            @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-            
-            .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
-            .user-avatar { background: #5f6368; color: white; }
-            .ai-avatar { background: linear-gradient(135deg, #8ab4f8, #c58af9); color: #131314; }
-            .message-content { flex: 1; padding-top: 6px; word-break: break-word; color: var(--text-color); }
-            
-            .input-area { padding: 16px 20px 24px 20px; width: 100%; max-width: 900px; margin: 0 auto; background: var(--bg-color); }
-            .input-box { display: flex; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 24px; padding: 10px 16px; align-items: center; gap: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-            .input-box textarea { flex: 1; background: transparent; border: none; color: white; font-size: 15px; outline: none; resize: none; max-height: 150px; font-family: inherit; }
-            
-            .action-btn { background: transparent; border: none; color: var(--text-secondary); width: 38px; height: 38px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; font-size: 18px; }
-            .action-btn:hover { background: var(--hover-bg); color: white; }
-            .action-btn.listening { color: #ff5252; background: rgba(255,82,82,0.1); animation: pulse 1.5s infinite; }
-            
-            @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        /* Sidebar */
+        .sidebar { width: 260px; background-color: var(--sidebar-bg); display: flex; flex-direction: column; padding: 20px; border-right: 1px solid #333; transition: transform 0.3s ease; z-index: 1000; }
+        .sidebar h2 { color: var(--accent-color); margin-top: 0; text-align: center; }
+        .menu-btn { background: transparent; border: 1px solid #444; color: var(--text-color); padding: 10px; margin-bottom: 10px; border-radius: 5px; cursor: pointer; text-align: left; transition: 0.3s; }
+        .menu-btn:hover { background: #333; }
+        .api-section { margin-top: auto; border-top: 1px solid #444; padding-top: 20px; }
+        .api-key-box { background: #000; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; word-break: break-all; color: #888; margin-bottom: 10px; }
+        #getApiBtn { background-color: var(--accent-color); color: white; border: none; width: 100%; padding: 10px; border-radius: 5px; cursor: pointer; }
 
-            .send-btn { background: var(--accent-color); color: #131314; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s; flex-shrink: 0; }
-            .send-btn:hover { opacity: 0.9; transform: scale(1.05); }
-
-            @media (max-width: 768px) {
-                .sidebar { display: none; }
-                .chat-messages { padding: 15px; gap: 16px; }
-                .input-area { padding: 10px 15px 20px 15px; }
-            }
-        </style>
-    </head>
-    <body>
-        <div class="sidebar">
-            <div class="brand">✨ ZiyoAI Platform</div>
-            <button class="new-chat-btn" onclick="location.reload()"><span>+</span> Yangi suhbat</button>
-            
-            <div class="features-list">
-                <div class="feature-item">🧠 Cheksiz Xotira (SQLite)</div>
-                <div class="feature-item">🌐 Real vaqtda Qidiruv</div>
-                <div class="feature-item">🎨 Dahshat AI Rasm Gateway</div>
-                <div class="feature-item">🎤 Ovozli Muloqot (Speech)</div>
-            </div>
-        </div>
+        /* Main Chat */
+        .main-chat { flex: 1; display: flex; flex-direction: column; background-color: var(--chat-bg); position: relative; }
+        .chat-header { padding: 15px 20px; border-bottom: 1px solid #333; display: flex; align-items: center; font-weight: bold; }
+        #menu-toggle { display: none; font-size: 24px; background: none; border: none; color: var(--text-color); cursor: pointer; margin-right: 15px; }
         
-        <div class="main-container">
-            <div class="chat-header">
-                <span>ZiyoAI Markaziy Tizimi v7.0</span>
-                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">Optimizatsiya qilingan</span>
-            </div>
-            
-            <div class="chat-messages" id="messages">
-                <div class="message-wrapper">
-                    <div class="avatar ai-avatar">Z</div>
-                    <div class="message-content">
-                        <b>ZiyoAI:</b> Barcha xatoliklar to'liq tuzatildi! Marhamat, sinab ko'ring!
-                    </div>
-                </div>
-            </div>
-            
-            <div class="input-area">
-                <div class="input-box">
-                    <button class="action-btn" id="micBtn" onclick="toggleSpeechRecognition()" title="Ovoz bilan gaplashish">🎤</button>
-                    <textarea id="userInput" rows="1" placeholder="Masalan: 'Qora sport mashina' yoki 'Qor bosgan tog'..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
-                    <button class="send-btn" onclick="sendMessage()">➔</button>
-                </div>
-            </div>
-        </div>
+        .chat-history { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; scroll-behavior: smooth; }
+        .message { max-width: 80%; padding: 15px; border-radius: 10px; line-height: 1.5; position: relative; }
+        .message.user { align-self: flex-end; background-color: var(--user-msg-bg); border-bottom-right-radius: 2px; }
+        .message.ai { align-self: flex-start; background-color: var(--ai-msg-bg); border-bottom-left-radius: 2px; }
+        .message strong { color: var(--accent-color); display: block; margin-bottom: 5px; }
+        .message img { margin-top: 10px; border-radius: 5px; }
 
-        <script>
-            const userId = 'user-' + Math.random().toString(36).substring(2, 9);
-            let recognition;
-            let isListening = false;
+        .input-area { padding: 20px; background-color: var(--chat-bg); border-top: 1px solid #333; display: flex; gap: 10px; }
+        #user-input { flex: 1; padding: 15px; border-radius: 5px; border: 1px solid #444; background-color: #333; color: white; resize: none; outline: none; }
+        #user-input:focus { border-color: var(--accent-color); }
+        #send-btn { padding: 0 20px; background-color: var(--accent-color); color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        #send-btn:hover { opacity: 0.9; }
 
-            function toggleSpeechRecognition() {
-                const micBtn = document.getElementById('micBtn');
-                const input = document.getElementById('userInput');
+        /* Mobile Adaptation */
+        @media (max-width: 768px) {
+            .sidebar { position: absolute; left: 0; top: 0; bottom: 0; transform: translateX(-100%); }
+            .sidebar.active { transform: translateX(0); }
+            #menu-toggle { display: block; }
+        }
+    </style>
+</head>
+<body>
 
-                if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                    alert("Brauzeringiz ovozli qidirishni qo'llab-quvvatlamaydi.");
-                    return;
-                }
+<div class="sidebar" id="sidebar">
+    <h2>ZiyoAI</h2>
+    <button class="menu-btn" onclick="startNewChat()">+ Yangi suhbat</button>
+    <div class="menu-btn">🧠 Xotira: Yoqilgan</div>
+    <div class="menu-btn">🌐 Qidiruv: Yoqilgan</div>
+    <div class="menu-btn">🎨 Rasm: Yoqilgan</div>
+    
+    <div class="api-section">
+        <p>Sizning API kalitingiz:</p>
+        <div class="api-key-box" id="my-api-key">Kalit olish uchun bosing</div>
+        <button id="getApiBtn" onclick="promptApiKey()">API Kalitni Boshqarish</button>
+    </div>
+</div>
 
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                
-                if (isListening) {
-                    recognition.stop();
-                    return;
-                }
-
-                recognition = new SpeechRecognition();
-                recognition.lang = 'uz-UZ';
-                recognition.interimResults = false;
-                recognition.maxAlternatives = 1;
-
-                recognition.onstart = () => {
-                    isListening = true;
-                    micBtn.classList.add('listening');
-                    input.placeholder = "Eshitayapman, gapiring...";
-                };
-
-                recognition.onresult = (event) => {
-                    const speechText = event.results[0][0].transcript;
-                    input.value = speechText;
-                    sendMessage();
-                };
-
-                recognition.onerror = () => { stopListeningState(); };
-                recognition.onend = () => { stopListeningState(); };
-                recognition.start();
-            }
-
-            function stopListeningState() {
-                isListening = false;
-                document.getElementById('micBtn').classList.remove('listening');
-                document.getElementById('userInput').placeholder = "Masalan: 'Qora sport mashina'...";
-            }
-
-            function speakText(text) {
-                if ('speechSynthesis' in window) {
-                    const cleanText = text.replace(/<[^>]*>?/gm, '');
-                    const utterance = new SpeechSynthesisUtterance(cleanText);
-                    utterance.lang = 'uz-UZ';
-                    utterance.rate = 1.0;
-                    window.speechSynthesis.speak(utterance);
-                }
-            }
-
-            async function sendMessage() {
-                const input = document.getElementById('userInput');
-                const messages = document.getElementById('messages');
-                const text = input.value.trim();
-                if(!text) return;
-
-                messages.innerHTML += `
-                    <div class="message-wrapper">
-                        <div class="avatar user-avatar">S</div>
-                        <div class="message-content"><b>Siz:</b> ${text}</div>
-                    </div>`;
-                input.value = '';
-                messages.scrollTop = messages.scrollHeight;
-
-                const loadingId = 'loading-' + Date.now();
-                messages.innerHTML += `
-                    <div class="message-wrapper" id="${loadingId}">
-                        <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI natija tayyorlamoqda...</div>
-                    </div>`;
-                messages.scrollTop = messages.scrollHeight;
-
-                try {
-                    const response = await fetch('/api/chat', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({user_id: userId, prompt: text})
-                    });
-                    const data = await response.json();
-                    
-                    document.getElementById(loadingId).innerHTML = `
-                        <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content"><b>ZiyoAI:</b> ${data.reply}</div>`;
-                    
-                    speakText(data.reply);
-
-                } catch (err) {
-                    document.getElementById(loadingId).innerHTML = `
-                        <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: #ff8ab4;">Tarmoqda xatolik yuz berdi.</div>`;
-                }
-                messages.scrollTop = messages.scrollHeight;
-            }
-        </script>
-    </body>
-    </html>
-    """
-    return web.Response(text=html_content, content_type='text/html')
-
-
-# --- API HANDLERS ---
-async def api_chat_handler(request):
-    try:
-        data = await request.json()
-        user_id = data.get("user_id", "default_user")
-        prompt = data.get("prompt", "")
-        reply = await generate_ziyo_response(user_id, prompt)
-        return web.json_response({"status": "success", "reply": reply})
-    except Exception as e:
-        return web.json_response({"status": "error", "reply": str(e)}, status=400)
-
-async def api_external_generate(request):
-    try:
-        api_key = request.headers.get("X-API-Key")
-        if not validate_api_key(api_key):
-            return web.json_response({"error": "Unauthorized: Yaroqli API kalit topilmadi."}, status=401)
-        
-        data = await request.json()
-        prompt = data.get("prompt", "")
-        user_id = data.get("user_id", "external_api_user")
-        
-        reply = await generate_ziyo_response(user_id, prompt)
-        return web.json_response({"status": "success", "reply": reply})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
-
-async def api_create_key(request):
-    try:
-        data = await request.json()
-        owner = data.get("owner", "Developer")
-        raw_string = owner + str(os.urandom(16))
-        new_key = "ziyo_" + hashlib.sha256(raw_string.encode()).hexdigest()[:32]
-        
-        conn = sqlite3.connect("ziyo_core.db")
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO api_keys (api_key, owner) VALUES (?, ?)", (new_key, owner))
-        conn.commit()
-        conn.close()
-        
-        return web.json_response({"status": "success", "api_key": new_key, "owner": owner})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=400)
-
-
-# --- ILOVANI ISHGA TUSHIRISH ---
-async def init_app():
-    app = web.Application()
-    app.router.add_get("/", index_handler)
-    app.router.add_post("/api/chat", api_chat_handler)
-    app.router.add_post("/api/v1/generate", api_external_generate)
-    app.router.add_post("/api/v1/create_key", api_create_key)
-    return app
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app = asyncio.run(init_app())
-    web.run_app(app, host="0.0.0.0", port=port)
+<div class="main-chat">
+    <div class="chat-header">
+        <button id="menu-toggle">☰</button>
+        ZiyoAI Markaziy Tizimi
+    </div>
+    
+    <div class="chat-history" id="chat-history">
+        <div class="message ai">
+            <strong>ZiyoAI:</strong> Assalomu alaykum! Men ZiyoAI
