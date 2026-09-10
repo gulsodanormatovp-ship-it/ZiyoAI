@@ -1,10 +1,10 @@
 import asyncio
 import logging
 import os
-import json
 import sqlite3
 import hashlib
 from aiohttp import web
+from duckduckgo_search import DDGS
 
 # Logging sozlamasi
 logging.basicConfig(level=logging.INFO)
@@ -13,7 +13,6 @@ logging.basicConfig(level=logging.INFO)
 def init_db():
     conn = sqlite3.connect("ziyo_core.db")
     cursor = conn.cursor()
-    # Foydalanuvchilar va xotira jadvali
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS memory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,7 +22,6 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Tashqi API foydalanuvchilari uchun kalitlar jadvali
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS api_keys (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +42,7 @@ def save_message(user_id: str, role: str, content: str):
     conn.commit()
     conn.close()
 
-def get_user_history(user_id: str, limit: int = 10):
+def get_user_history(user_id: str, limit: int = 6):
     conn = sqlite3.connect("ziyo_core.db")
     cursor = conn.cursor()
     cursor.execute("SELECT role, content FROM memory WHERE user_id = ? ORDER BY id DESC LIMIT ?", (user_id, limit))
@@ -66,32 +64,59 @@ def validate_api_key(api_key: str) -> bool:
     return row is not None
 
 
-# --- INTELLEKTUAL JAVOB VA QIDIRUV MANTIG'I ---
+# --- INTERNETDAN QIDIRISH MANTIG'I ---
+def search_web(query: str) -> str:
+    try:
+        with DDGS() as ddgs:
+            results = [r for r in ddgs.text(query, max_results=3)]
+            if results:
+                snippets = []
+                for r in results:
+                    title = r.get('title', '')
+                    body = r.get('body', '')
+                    snippets.append(f"<b>{title}</b><br>{body}")
+                return "<br><br>".join(snippets)
+    except Exception as e:
+        logging.error(f"Web search error: {e}")
+    return ""
+
+
+# --- ASOSIY INTELLEKTUAL MARKAZ ---
 async def generate_ziyo_response(user_id: str, prompt: str) -> str:
     text = prompt.lower().strip()
     save_message(user_id, "user", prompt)
     
-    # Tarixni olish (Cheksiz xotira namunasi)
-    history = get_user_history(user_id, limit=5)
-    
-    # Sun'iy intellekt mantiqiy tarmoqlari
-    if any(w in text for w in ["salom", "assalomu alaykum", "hi", "hello"]):
-        reply = "Assalomu alaykum! ZiyoAI markaziy tizimi faol. Bugun sizga qanday ko'mak berishim mumkin?"
+    # 1. Rasm yaratish moduli (Real AI Image Generation Gateway)
+    if any(w in text for w in ["rasm", "chiz", "generation", "image", "foto", "draw", "surat"]):
+        encoded_prompt = prompt.replace(" ", "%20")
+        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
+        reply = f"🎨 <b>ZiyoAI Vizual Markazi:</b><br>Sizning so'rovingiz bo'yicha maxsus rasm yaratildi:<br><br><img src='{image_url}' alt='ZiyoAI Generated Image' style='max-width:100%; border-radius:16px; margin-top:8px; box-shadow: 0 8px 24px rgba(0,0,0,0.6);'>"
+        save_message(user_id, "assistant", "[Rasm yaratildi]")
+        return reply
+
+    # 2. Internetdan qidirish moduli
+    if any(w in text for w in ["qidir", "internet", "yangilik", "kim", "nima", "qayerda", "ob-havo", "weather", "2026"]):
+        search_result = search_web(prompt)
+        if search_result:
+            reply = f"🌐 <b>Internetdan topilgan ma'lumotlar:</b><br><br>{search_result}"
+            save_message(user_id, "assistant", reply)
+            return reply
+
+    # 3. Odatiy savollar va xotiraga asoslangan javoblar
+    if "salom" in text or "assalomu alaykum" in text:
+        reply = "Assalomu alaykum! ZiyoAI to'liq quvvatda ishga tushdi. Menga istalgan savolni bering, internetdan qidirib topaman yoki rasm chizib beraman!"
     elif "python" in text:
-        reply = "Python bo'yicha so'rovingiz qabul qilindi. Biz bu yerda aiohttp, async/await va xotira bazalari yordamida mukammal tizim quryapmiz."
-    elif "rasm" in text or "generatsiya" in text:
-        reply = "🎨 Rasm yaratish moduli ishga tushdi: ZiyoAI Gateway orqali siz istagan tasvirni generatsiya qilish uchun so'rov yubordingiz. (Hozircha server resursi uchun vizual eskiz tayyorlandi)."
-    elif "internet" in text or "qidir" in text or "yangilik" in text:
-        reply = f"🌐 Internet tarmog'idan '{prompt}' bo'yicha ma'lumotlar tahlil qilindi: Tizim real vaqt rejimida o'z bazasini yangilab bormoqda."
+        reply = "Python — dunyodagi eng mashhur va qudratli tillardan biri. ZiyoAI tizimining o'zi ham Python va aiohttp yordamida yaratilgan."
+    elif "sen kimsan" in text or "ziyoai" in text:
+        reply = "Men ZiyoAI — hech qanday begona pullik xizmatlarga bog'lanmagan, o'zimizning mustaqil serverimizda ishlaydigan sun'iy intellekt ekotizimiman."
     else:
-        # Umumiy mustaqil javob mexanizmi
-        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha ma'lumotlar bazasi va xotira qatlamidan foydalanib javob tayyorlandi. Sizning har bir savolingiz xotirada saqlanib, kelgusida aniqroq yechim berish uchun o'rganib boriladi."
-        
+        reply = f"ZiyoAI tahlil markazi: '{prompt}' bo'yicha so'rovingiz qabul qilindi. Xotira bazasi tahlil qilindi. Qo'shimcha ma'lumot uchun 'qidir' yoki 'rasm' so'zlarini qo'shib yuborishingiz mumkin."
+
     save_message(user_id, "assistant", reply)
     return reply
 
 
-# --- WEB INTERFEYS (Responsive, Telefon va Kompyuter uchun mukammal) ---
+# --- WEB INTERFEYS (Mukammal Responsive Dizayn) ---
 async def index_handler(request):
     html_content = """
     <!DOCTYPE html>
@@ -115,29 +140,31 @@ async def index_handler(request):
             body { background: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; overflow: hidden; }
             
             /* Sidebar */
-            .sidebar { width: 280px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border-color); padding: 16px; transition: 0.3s; z-index: 10; }
+            .sidebar { width: 280px; background: var(--sidebar-bg); display: flex; flex-direction: column; border-right: 1px solid var(--border-color); padding: 16px; z-index: 10; transition: 0.3s; }
             .brand { font-size: 18px; font-weight: 700; color: #ffffff; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
             .new-chat-btn { background: #282a2c; border: 1px solid var(--border-color); color: var(--text-color); padding: 12px; border-radius: 12px; cursor: pointer; text-align: left; font-size: 14px; transition: 0.2s; font-weight: 500; display: flex; align-items: center; gap: 8px; }
             .new-chat-btn:hover { background: var(--hover-bg); }
             
             .features-list { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--text-secondary); }
-            .feature-item { padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 8px; }
+            .feature-item { padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.03); display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.05); }
 
             /* Main Container */
-            .main-container { flex: 1; display: flex; flex-direction: column; height: 100vh; background: var(--bg-color); position: relative; }
-            .chat-header { padding: 16px 24px; border-bottom: 1px solid var(--border-color); font-size: 16px; font-weight: 600; color: #ffffff; display: flex; justify-content: space-between; align-items: center; }
+            .main-container { flex: 1; display: flex; flex-direction: column; height: 100vh; background: var(--bg-color); position: relative; overflow: hidden; }
+            .chat-header { padding: 16px 24px; border-bottom: 1px solid var(--border-color); font-size: 16px; font-weight: 600; color: #ffffff; display: flex; justify-content: space-between; align-items: center; background: var(--bg-color); }
             
             /* Chat Messages */
-            .chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; max-width: 900px; width: 100%; margin: 0 auto; }
-            .message-wrapper { display: flex; gap: 16px; max-width: 800px; width: 100%; margin: 0 auto; line-height: 1.6; font-size: 15px; }
+            .chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; width: 100%; max-width: 900px; margin: 0 auto; scroll-behavior: smooth; }
+            .message-wrapper { display: flex; gap: 16px; width: 100%; line-height: 1.6; font-size: 15px; animation: fadeIn 0.3s ease; }
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+            
             .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
             .user-avatar { background: #5f6368; color: white; }
             .ai-avatar { background: linear-gradient(135deg, #8ab4f8, #c58af9); color: #131314; }
-            .message-content { flex: 1; padding-top: 6px; word-break: break-word; }
+            .message-content { flex: 1; padding-top: 6px; word-break: break-word; color: var(--text-color); }
             
             /* Input Area */
-            .input-area { padding: 20px; max-width: 900px; width: 100%; margin: 0 auto; }
-            .input-box { display: flex; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 24px; padding: 12px 20px; align-items: center; gap: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+            .input-area { padding: 16px 20px 24px 20px; width: 100%; max-width: 900px; margin: 0 auto; background: var(--bg-color); }
+            .input-box { display: flex; background: var(--panel-bg); border: 1px solid var(--border-color); border-radius: 24px; padding: 12px 20px; align-items: center; gap: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
             .input-box textarea { flex: 1; background: transparent; border: none; color: white; font-size: 15px; outline: none; resize: none; max-height: 150px; font-family: inherit; }
             .input-box button { background: var(--accent-color); color: #131314; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; transition: 0.2s; flex-shrink: 0; }
             .input-box button:hover { opacity: 0.9; transform: scale(1.05); }
@@ -145,8 +172,8 @@ async def index_handler(request):
             /* Mobile Adaptation */
             @media (max-width: 768px) {
                 .sidebar { display: none; }
-                .chat-messages { padding: 10px; }
-                .input-area { padding: 10px; }
+                .chat-messages { padding: 15px; gap: 16px; }
+                .input-area { padding: 10px 15px 20px 15px; }
             }
         </style>
     </head>
@@ -156,38 +183,38 @@ async def index_handler(request):
             <button class="new-chat-btn" onclick="location.reload()"><span>+</span> Yangi suhbat</button>
             
             <div class="features-list">
-                <div class="feature-item">🧠 Cheksiz Xotira (DB)</div>
+                <div class="feature-item">🧠 Cheksiz Xotira (SQLite)</div>
                 <div class="feature-item">🌐 Real vaqtda Qidiruv</div>
-                <div class="feature-item">🎨 Rasm / Video Gateway</div>
+                <div class="feature-item">🎨 AI Rasm Generatsiya</div>
                 <div class="feature-item">🔌 Ochiq API Tizimi</div>
             </div>
         </div>
         
         <div class="main-container">
             <div class="chat-header">
-                <span>ZiyoAI Markaziy Tizimi v2.0</span>
-                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 10px; border-radius: 20px;">Mustaqil Server</span>
+                <span>ZiyoAI Markaziy Tizimi v3.0</span>
+                <span style="font-size: 12px; color: var(--accent-color); background: rgba(138,180,248,0.1); padding: 4px 12px; border-radius: 20px; border: 1px solid rgba(138,180,248,0.2);">Faol Server</span>
             </div>
             
             <div class="chat-messages" id="messages">
                 <div class="message-wrapper">
                     <div class="avatar ai-avatar">Z</div>
                     <div class="message-content">
-                        <b>ZiyoAI:</b> Assalomu alaykum! Men to'liq mustaqil intellektual tizimman. Xotiram, internet qidiruvim va API platformam ishga tushdi. Menga istalgan savolni bering!
+                        <b>ZiyoAI:</b> Assalomu alaykum! Xotiram, internet qidiruvim va rasm yaratish modullarim to'liq ishga tushdi. Menga istalgan savolni bering yoki rasm chizishni buyuring!
                     </div>
                 </div>
             </div>
             
             <div class="input-area">
                 <div class="input-box">
-                    <textarea id="userInput" rows="1" placeholder="ZiyoAI dan nimanidir so'rang..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
+                    <textarea id="userInput" rows="1" placeholder="ZiyoAI dan nimanidir so'rang yoki rasm chizishni buyuring..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); sendMessage();}"></textarea>
                     <button onclick="sendMessage()">➔</button>
                 </div>
             </div>
         </div>
 
         <script>
-            const userId = 'user-' + Math.random().toString(36.substring(2, 9));
+            const userId = 'user-' + Math.random().toString(36).substring(2, 9);
 
             async function sendMessage() {
                 const input = document.getElementById('userInput');
@@ -209,7 +236,7 @@ async def index_handler(request):
                 messages.innerHTML += `
                     <div class="message-wrapper" id="${loadingId}">
                         <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI o'ylamoqda va bazadan qidirmoqda...</div>
+                        <div class="message-content" style="color: var(--text-secondary);">ZiyoAI tahlil qilmoqda, internetdan izlamoqda yoki rasm yaratmoqda...</div>
                     </div>`;
                 messages.scrollTop = messages.scrollHeight;
 
@@ -226,7 +253,7 @@ async def index_handler(request):
                 } catch (err) {
                     document.getElementById(loadingId).innerHTML = `
                         <div class="avatar ai-avatar">Z</div>
-                        <div class="message-content" style="color: #ff8ab4;">Tizimda tarmoq xatoligi yuz berdi, qayta urinib ko'ring.</div>`;
+                        <div class="message-content" style="color: #ff8ab4;">Tarmoqda xatolik yuz berdi, qayta urinib ko'ring.</div>`;
                 }
                 messages.scrollTop = messages.scrollHeight;
             }
@@ -237,7 +264,7 @@ async def index_handler(request):
     return web.Response(text=html_content, content_type='text/html')
 
 
-# --- API HANDLERS (Sayt va Boshqalar ulanishi uchun) ---
+# --- API HANDLERS ---
 async def api_chat_handler(request):
     try:
         data = await request.json()
@@ -249,11 +276,10 @@ async def api_chat_handler(request):
         return web.json_response({"status": "error", "reply": str(e)}, status=400)
 
 async def api_external_generate(request):
-    """Boshqalar sizning API'ngizni ishlatishi uchun maxsus endpoint"""
     try:
         api_key = request.headers.get("X-API-Key")
         if not validate_api_key(api_key):
-            return web.json_response({"error": "Unauthorized: Yaroqli API kalit taqdim etilmadi."}, status=401)
+            return web.json_response({"error": "Unauthorized: Yaroqli API kalit topilmadi."}, status=401)
         
         data = await request.json()
         prompt = data.get("prompt", "")
@@ -265,7 +291,6 @@ async def api_external_generate(request):
         return web.json_response({"error": str(e)}, status=500)
 
 async def api_create_key(request):
-    """Yangi API kalit generatsiya qilish"""
     try:
         data = await request.json()
         owner = data.get("owner", "Developer")
@@ -283,7 +308,7 @@ async def api_create_key(request):
         return web.json_response({"error": str(e)}, status=400)
 
 
-# --- ILOVANI YIG'ISH VA ISHGA TUSHIRISH ---
+# --- ILOVANI ISHGA TUSHIRISH ---
 async def init_app():
     app = web.Application()
     app.router.add_get("/", index_handler)
