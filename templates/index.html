@@ -2,219 +2,201 @@
 <html lang="uz" class="dark">
 <head>
     <meta charset="UTF-8">
-    <title>ZiyoAI Enterprise - Ultra Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZiyoAI Enterprise Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = { darkMode: 'class', theme: { extend: {} } }
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#131314',
+                        sidebarBg: '#1e1f20',
+                        chatBg: '#18181a',
+                        inputBg: '#282a2c',
+                        accentGreen: '#00a67e'
+                    }
+                }
+            }
+        }
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="bg-gray-900 text-gray-100 dark:bg-gray-950 dark:text-gray-100 flex h-screen overflow-hidden transition-colors duration-300">
+<body class="bg-darkBg text-gray-100 h-screen flex overflow-hidden font-sans">
 
-    <!-- YON PANEL (SIDEBAR - CHATGPT STYLE) -->
-    <div class="w-72 bg-gray-900 dark:bg-gray-900 border-r border-gray-800 flex flex-col justify-between">
-        <div>
-            <div class="p-4 flex items-center justify-between border-b border-gray-800">
-                <span class="font-bold text-lg text-emerald-400 flex items-center gap-2"><i class="fa-solid fa-brain"></i> ZiyoAI Pro</span>
-                <button onclick="toggleTheme()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-moon" id="theme-icon"></i></button>
-            </div>
-            <div class="p-3">
-                <button onclick="startNewChat()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-2 transition shadow-lg">
-                    <i class="fa-solid fa-plus"></i> Yangi suhbat
-                </button>
-            </div>
-            <!-- Chatlar tarixi ro'yxati -->
-            <div id="chat-history-list" class="p-3 space-y-1.5 overflow-y-auto max-h-[calc(100vh-220px)] text-sm">
-                <!-- Dinamik to'ldiriladi -->
+    <!-- Sidebar -->
+    <aside class="w-64 bg-sidebarBg flex flex-col justify-between border-r border-gray-800 hidden md:flex">
+        <div class="p-4 flex flex-col gap-4">
+            <button onclick="createNewChat()" class="flex items-center gap-3 bg-accentGreen hover:bg-emerald-600 text-white px-4 py-3 rounded-xl font-medium transition shadow-lg">
+                <i class="fa-solid fa-plus"></i> Yangi suhbat
+            </button>
+            <div id="chatHistoryList" class="flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-200px)] pr-1">
+                <!-- Suhbatlar tarixi bu yerga tushadi -->
             </div>
         </div>
-        <!-- Foydalanuvchi kabineti va balans -->
-        <div class="p-4 border-t border-gray-800 bg-gray-950/40">
-            <div class="flex items-center justify-between text-xs mb-2">
-                <span class="text-gray-400">Balans:</span>
-                <span id="user-balance" class="text-emerald-400 font-bold">1000 so'rov</span>
+        <div class="p-4 border-t border-gray-800 flex flex-col gap-3">
+            <div class="flex items-center justify-between text-sm text-gray-400">
+                <span>Balans:</span>
+                <span id="userBalance" class="text-emerald-400 font-bold">1000 so'rov</span>
             </div>
-            <button onclick="openCabinet()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition">
-                <i class="fa-solid fa-user-gear"></i> Kabinet & API Kalit
+            <button onclick="openCabinet()" class="flex items-center gap-2 text-sm bg-gray-800 hover:bg-gray-700 p-2.5 rounded-lg transition text-gray-300">
+                <i class="fa-solid fa-key text-accentGreen"></i> Kabinet & API Kalit
             </button>
         </div>
-    </div>
+    </aside>
 
-    <!-- ASOSIY ISH MAYDONI -->
-    <div class="flex-1 flex flex-col h-full bg-gray-900">
-        <!-- Top Navigation & Modes -->
-        <div class="h-14 border-b border-gray-800 px-6 flex items-center justify-between bg-gray-900/80 backdrop-blur">
+    <!-- Main Chat Area -->
+    <main class="flex-1 flex flex-col h-full bg-chatBg relative">
+        <!-- Header -->
+        <header class="h-14 border-b border-gray-800 flex items-center justify-between px-6 bg-sidebarBg/50 backdrop-blur">
             <div class="flex items-center gap-3">
-                <span id="active-chat-title" class="font-semibold text-gray-200">Yangi Suhbat</span>
-                <select id="ai-mode-select" class="bg-gray-800 text-xs text-emerald-400 border border-gray-700 rounded-lg px-2 py-1 outline-none">
+                <span class="font-bold text-lg text-emerald-400"><i class="fa-solid fa-brain"></i> ZiyoAI Pro</span>
+                <select id="aiMode" class="bg-inputBg border border-gray-700 text-xs text-gray-300 rounded-lg px-2.5 py-1.5 outline-none">
                     <option value="standard">Standard AI</option>
-                    <option value="deep_research">Deep Research (Chuqur Qidiruv)</option>
-                    <option value="coding">Sandbox Code Execution</option>
-                    <option value="rag">RAG (Fayllar tahlili)</option>
+                    <option value="deep_research">Deep Research</option>
+                    <option value="coding">Coding & Sandbox</option>
+                    <option value="rag">RAG (Fayllar bilan ishlash)</option>
                 </select>
             </div>
-            <div class="flex items-center gap-4 text-sm">
-                <button onclick="openGallery()" class="text-gray-400 hover:text-white flex items-center gap-1.5"><i class="fa-solid fa-images"></i> Galereya</button>
-            </div>
-        </div>
+            <label class="cursor-pointer text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg transition flex items-center gap-2 text-gray-300">
+                <i class="fa-solid fa-upload text-emerald-400"></i> Galereya / Fayl
+                <input type="file" id="fileUpload" class="hidden" onchange="uploadFile()">
+            </label>
+        </header>
 
-        <!-- Chat Xabarlar Maydoni -->
-        <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-6">
-            <div class="flex items-start gap-4">
-                <div class="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold shrink-0 shadow-md">Z</div>
-                <div class="bg-gray-800/90 border border-gray-700/50 p-4 rounded-2xl max-w-3xl text-gray-200 leading-relaxed shadow-xl">
-                    Assalomu alaykum! ZiyoAI Enterprise platformasiga xush kelibsiz. Barcha funksiyalar (Real-time Streaming, Sandbox, RAG, Balans, Galereya) to'liq tayyor. Savolingizni yozing!
+        <!-- Messages Box -->
+        <div id="chatMessages" class="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-6 max-w-4xl w-full mx-auto">
+            <div class="flex gap-4 items-start">
+                <div class="w-8 h-8 rounded-full bg-accentGreen flex items-center justify-center text-white font-bold shrink-0">Z</div>
+                <div class="bg-inputBg p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed border border-gray-800 shadow-sm">
+                    Assalomu alaykum! Men ZiyoAI Enterprise assistentiman. Barcha funksiyalar (Real-time Streaming, Sandbox, RAG, Balans) tayyor. Savolingizni yozing!
                 </div>
             </div>
         </div>
 
-        <!-- Pastki Input & Voice Mode Paneli -->
-        <div class="p-4 border-t border-gray-800 bg-gray-900">
-            <div class="max-w-4xl mx-auto flex items-center gap-3 bg-gray-800/90 rounded-2xl p-2.5 border border-gray-700 focus-within:border-emerald-500 transition shadow-inner">
-                <!-- Fayl yuklash (RAG uchun) -->
-                <button onclick="document.getElementById('rag-file').click()" class="text-gray-400 hover:text-white p-2 transition" title="Fayl yuklash (PDF/Word/Code)"><i class="fa-solid fa-paperclip"></i></button>
-                <input type="file" id="rag-file" class="hidden" onchange="uploadFile(this)">
-
-                <textarea id="user-input" rows="1" placeholder="ZiyoAI'ga xabar yozing yoki kod kiriting..." class="flex-1 bg-transparent text-gray-100 placeholder-gray-500 focus:outline-none resize-none px-2 text-sm"></textarea>
+        <!-- Input Area -->
+        <div class="p-4 bg-darkBg border-t border-gray-800">
+            <div class="max-w-4xl mx-auto relative flex items-center bg-inputBg rounded-2xl border border-gray-700 focus-within:border-emerald-500 transition shadow-inner">
+                <textarea id="promptInput" rows="1" placeholder="ZiyoAI'ga xabar yozing yoki kod kiriting..." class="w-full bg-transparent p-4 pr-24 text-sm text-gray-100 resize-none outline-none max-h-32" onkeydown="handleEnter(event)"></textarea>
                 
-                <!-- ChatGPT Style Voice-to-Voice Tugmasi -->
-                <button onclick="toggleVoiceMode()" id="voice-btn" class="text-gray-400 hover:text-emerald-400 p-2 transition" title="Ovozli muloqot (Voice-to-Voice)"><i class="fa-solid fa-microphone"></i></button>
-                
-                <button onclick="sendMessageStream()" class="bg-emerald-600 hover:bg-emerald-500 text-white w-10 h-10 rounded-xl flex items-center justify-center transition shadow-lg">
-                    <i class="fa-solid fa-arrow-up"></i>
-                </button>
+                <div class="absolute right-3 flex items-center gap-2">
+                    <button onclick="toggleVoice()" id="voiceBtn" class="text-gray-400 hover:text-white p-2 rounded-lg transition" title="Ovozli rejim">
+                        <i class="fa-solid fa-microphone"></i>
+                    </button>
+                    <button onclick="sendMessage()" class="bg-emerald-500 hover:bg-emerald-600 text-white w-9 h-9 rounded-xl flex items-center justify-center transition shadow-md">
+                        <i class="fa-solid fa-arrow-up"></i>
+                    </button>
+                </div>
             </div>
-            <div class="text-center text-[11px] text-gray-500 mt-2">ZiyoAI xatolikka yo'l qo'yishi mumkin. Muhim ma'lumotlarni tekshiring.</div>
+            <div class="text-center text-[10px] text-gray-500 mt-2">ZiyoAI xatolikka yo'l qo'yishi mumkin. Muhim ma'lumotlarni tekshiring.</div>
         </div>
-    </div>
+    </main>
 
-    <!-- JavaScript Integratsiyasi -->
     <script>
-        let userId = "user_demo_123";
-        let currentChatId = "chat_default";
+        const userId = "user_" + Math.random().toString(36.substring(2, 9));
         let ws = null;
+        let isRecording = false;
 
-        function toggleTheme() {
-            document.documentElement.classList.toggle('dark');
-            const icon = document.getElementById('theme-icon');
-            icon.classList.toggle('fa-moon');
-            icon.classList.toggle('fa-sun');
-        }
-
-        async function loadChats() {
-            const res = await fetch(`/api/chats/${userId}`);
-            const chats = await res.json();
-            const list = document.getElementById('chat-history-list');
-            list.innerHTML = '';
-            chats.forEach(c => {
-                list.innerHTML += `
-                    <div onclick="selectChat('${c.chat_id}', '${c.title}')" class="p-2.5 hover:bg-gray-800 rounded-xl cursor-pointer flex items-center justify-between text-gray-300 transition">
-                        <span class="truncate text-xs"><i class="fa-regular fa-message mr-2 text-emerald-400"></i> ${c.title}</span>
-                    </div>
-                `;
-            });
-        }
-
-        async function startNewChat() {
-            const title = prompt("Yangi chat nomini kiriting:", "Yangi suhbat");
-            if (!title) return;
-            const mode = document.getElementById('ai-mode-select').value;
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws/${userId}`);
             
-            const formData = new FormData();
-            formData.append("user_id", userId);
-            formData.append("title", title);
-            formData.append("mode", mode);
-
-            const res = await fetch('/api/chat/new', { method: 'POST', body: formData });
-            const data = await res.json();
-            currentChatId = data.chat_id;
-            document.getElementById('active-chat-title').innerText = title;
-            document.getElementById('chat-messages').innerHTML = '';
-            loadChats();
-        }
-
-        // WebSockets orqali Real-time Streaming
-        function initWebSocket() {
-            ws = new WebSocket(`ws://${window.location.host}/ws/${userId}`);
             ws.onmessage = function(event) {
-                if(event.data === "[DONE]") return;
-                // Jonli matn yozish
-                let lastAIBox = document.getElementById('current-ai-response');
-                if(lastAIBox) lastAIBox.innerHTML += event.data;
+                if (event.data === "[DONE]") {
+                    currentAiBubble = null;
+                    return;
+                }
+                if (!currentAiBubble) {
+                    currentAiBubble = appendMessage("ZiyoAI", "", "ai");
+                }
+                currentAiBubble.innerText += event.data;
+                scrollToBottom();
             };
         }
 
-        async function sendMessageStream() {
-            const input = document.getElementById('user-input');
-            const prompt = input.value.trim();
-            if(!prompt) return;
+        let currentAiBubble = null;
 
-            const chatBox = document.getElementById('chat-messages');
-            chatBox.innerHTML += `
-                <div class="flex items-start gap-4 justify-end">
-                    <div class="bg-emerald-600 p-4 rounded-2xl max-w-3xl text-white text-sm shadow-lg">${prompt}</div>
-                    <div class="w-9 h-9 rounded-full bg-gray-700 flex items-center justify-center text-white font-bold shrink-0">Siz</div>
-                </div>
-            `;
+        function appendMessage(sender, text, type) {
+            const chatBox = document.getElementById("chatMessages");
+            const wrapper = document.createElement("div");
+            wrapper.className = `flex gap-4 items-start ${type === 'user' ? 'flex-row-reverse' : ''}`;
+
+            const avatar = document.createElement("div");
+            avatar.className = `w-8 h-8 rounded-full flex items-center justify-center text-white font-bold shrink-0 ${type === 'user' ? 'bg-indigo-600' : 'bg-accentGreen'}`;
+            avatar.innerText = type === 'user' ? 'S' : 'Z';
+
+            const bubble = document.createElement("div");
+            bubble.className = `p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed border shadow-sm ${type === 'user' ? 'bg-indigo-900/40 border-indigo-800 text-white' : 'bg-inputBg border-gray-800 text-gray-200'}`;
+            bubble.innerText = text;
+
+            wrapper.appendChild(avatar);
+            wrapper.appendChild(bubble);
+            chatBox.appendChild(wrapper);
+            scrollToBottom();
+            return bubble;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById("promptInput");
+            const text = input.value.trim();
+            if (!text) return;
+
+            appendMessage("Siz", text, "user");
             input.value = "";
 
-            // Agar rejim Kod Sandbox bo'lsa, maxsus API ishlaydi
-            const mode = document.getElementById('ai-mode-select').value;
-            if(mode === 'coding') {
-                const res = await fetch('/api/sandbox/run', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ code: prompt })
-                });
-                const data = await res.json();
-                chatBox.innerHTML += `
-                    <div class="flex items-start gap-4">
-                        <div class="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold shrink-0">Z</div>
-                        <div class="bg-gray-800 border border-gray-700 p-4 rounded-2xl max-w-3xl text-gray-200 text-sm font-mono whitespace-pre-wrap"><b>Sandbox Natijasi:</b>\n${data.output}</div>
-                    </div>
-                `;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(text);
+            }
+        }
+
+        function handleEnter(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function scrollToBottom() {
+            const box = document.getElementById("chatMessages");
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function toggleVoice() {
+            isRecording = !isRecording;
+            const btn = document.getElementById("voiceBtn");
+            if (isRecording) {
+                btn.classList.add("text-red-500", "animate-pulse");
+                alert("Ovozli yozuv rejimi yoqildi (ChatGPT Style Voice simulyatsiyasi).");
             } else {
-                // WebSocket orqali stream qilish
-                chatBox.innerHTML += `
-                    <div class="flex items-start gap-4">
-                        <div class="w-9 h-9 rounded-full bg-emerald-600 flex items-center justify-center text-white font-bold shrink-0">Z</div>
-                        <div id="current-ai-response" class="bg-gray-800 border border-gray-700 p-4 rounded-2xl max-w-3xl text-gray-200 text-sm"></div>
-                    </div>
-                `;
-                if(ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(prompt);
-                }
-            }
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        async function uploadFile(input) {
-            if(input.files && input.files[0]) {
-                const formData = new FormData();
-                formData.append("user_id", userId);
-                formData.append("file", input.files[0]);
-                const res = await fetch('/api/rag/upload', { method: 'POST', body: formData });
-                const data = await res.json();
-                alert(data.message);
+                btn.classList.remove("text-red-500", "animate-pulse");
             }
         }
 
-        function toggleVoiceMode() {
-            alert("Ovozli muloqot (Voice-to-Voice) faollashdi. ChatGPT kabi gaplasha boshlashingiz mumkin!");
+        async function uploadFile() {
+            const fileInput = document.getElementById("fileUpload");
+            if (fileInput.files.length === 0) return;
+            const formData = new FormData();
+            formData.append("user_id", userId);
+            formData.append("file", fileInput.files[0]);
+
+            const res = await fetch("/api/rag/upload", { method: "POST", body: formData });
+            const data = await res.json();
+            alert(data.message);
+        }
+
+        function createNewChat() {
+            document.getElementById("chatMessages").innerHTML = '';
+            appendMessage("ZiyoAI", "Yangi suhbat boshlandi. Qanday yordam bera olaman?", "ai");
         }
 
         async function openCabinet() {
             const res = await fetch(`/api/user/${userId}`);
-            const user = await res.json();
-            alert(`Fabrika Kabineti:\nBalans: ${user.balance} so'rov\nAPI Kalit: ${user.api_key}`);
+            const data = await res.json();
+            alert(`Foydalanuvchi: ${data.username}\nBalans: ${data.balance} so'rov\nAPI Kalit: ${data.api_key}`);
         }
 
-        function openGallery() {
-            alert("Galereya sahifasi: ZiyoAI orqali yaratilgan barcha media fayllar shu yerda jamlanadi.");
-        }
-
-        loadChats();
-        initWebSocket();
+        connectWebSocket();
     </script>
 </body>
 </html>
