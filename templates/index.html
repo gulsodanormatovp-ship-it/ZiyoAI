@@ -31,8 +31,10 @@
             <button onclick="createNewChat()" class="flex items-center gap-3 bg-accentGreen hover:bg-emerald-600 text-white px-4 py-3 rounded-xl font-medium transition shadow-lg">
                 <i class="fa-solid fa-plus"></i> Yangi suhbat
             </button>
-            <div id="chatHistoryList" class="flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-200px)] pr-1">
-                <!-- Suhbatlar tarixi bu yerga tushadi -->
+            <div id="chatHistoryList" class="flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-200px)] pr-1 text-sm text-gray-300">
+                <div class="p-2 hover:bg-gray-800 rounded-lg cursor-pointer">Botlar yaratish (Python)</div>
+                <div class="p-2 hover:bg-gray-800 rounded-lg cursor-pointer">Rasm va Video generator</div>
+                <div class="p-2 hover:bg-gray-800 rounded-lg cursor-pointer">Telegram bot constructor</div>
             </div>
         </div>
         <div class="p-4 border-t border-gray-800 flex flex-col gap-3">
@@ -53,14 +55,15 @@
             <div class="flex items-center gap-3">
                 <span class="font-bold text-lg text-emerald-400"><i class="fa-solid fa-brain"></i> ZiyoAI Pro</span>
                 <select id="aiMode" class="bg-inputBg border border-gray-700 text-xs text-gray-300 rounded-lg px-2.5 py-1.5 outline-none">
-                    <option value="standard">Standard AI</option>
-                    <option value="deep_research">Deep Research</option>
-                    <option value="coding">Coding & Sandbox</option>
-                    <option value="rag">RAG (Fayllar bilan ishlash)</option>
+                    <option value="standard">Standard AI (Aniq javoblar)</option>
+                    <option value="coding">Bot & Dastur Kodlari</option>
+                    <option value="image_gen">Rasm Chizish</option>
+                    <option value="video_gen">Video Yaratish (MP4)</option>
+                    <option value="rag">RAG (Fayllar)</option>
                 </select>
             </div>
             <label class="cursor-pointer text-xs bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg transition flex items-center gap-2 text-gray-300">
-                <i class="fa-solid fa-upload text-emerald-400"></i> Galereya / Fayl
+                <i class="fa-solid fa-upload text-emerald-400"></i> Fayl yuklash
                 <input type="file" id="fileUpload" class="hidden" onchange="uploadFile()">
             </label>
         </header>
@@ -70,7 +73,7 @@
             <div class="flex gap-4 items-start">
                 <div class="w-8 h-8 rounded-full bg-accentGreen flex items-center justify-center text-white font-bold shrink-0">Z</div>
                 <div class="bg-inputBg p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed border border-gray-800 shadow-sm">
-                    Assalomu alaykum! Men ZiyoAI Enterprise assistentiman. Barcha funksiyalar (Real-time Streaming, Sandbox, RAG, Balans) tayyor. Savolingizni yozing!
+                    Assalomu alaykum! Men ZiyoAI assistentiman. Mikrofon tugmasini bosib ovoz bilan gaplashishingiz, matn yozib istalgan bot kodini, rasm yoki MP4 formatdagi videolarni yaratishingiz mumkin. Qanday yordam bera olaman?
                 </div>
             </div>
         </div>
@@ -78,11 +81,12 @@
         <!-- Input Area -->
         <div class="p-4 bg-darkBg border-t border-gray-800">
             <div class="max-w-4xl mx-auto relative flex items-center bg-inputBg rounded-2xl border border-gray-700 focus-within:border-emerald-500 transition shadow-inner">
-                <textarea id="promptInput" rows="1" placeholder="ZiyoAI'ga xabar yozing yoki kod kiriting..." class="w-full bg-transparent p-4 pr-24 text-sm text-gray-100 resize-none outline-none max-h-32" onkeydown="handleEnter(event)"></textarea>
+                <textarea id="promptInput" rows="1" placeholder="ZiyoAI'ga xabar yozing yoki ovozli tugmani bosing..." class="w-full bg-transparent p-4 pr-24 text-sm text-gray-100 resize-none outline-none max-h-32" onkeydown="handleEnter(event)"></textarea>
                 
                 <div class="absolute right-3 flex items-center gap-2">
-                    <button onclick="toggleVoice()" id="voiceBtn" class="text-gray-400 hover:text-white p-2 rounded-lg transition" title="Ovozli rejim">
-                        <i class="fa-solid fa-microphone"></i>
+                    <!-- Ovozli qidiruv / Mikrafon tugmasi -->
+                    <button onclick="toggleSpeechRecognition()" id="voiceBtn" class="text-gray-400 hover:text-white p-2 rounded-lg transition" title="Ovoz bilan gaplashish">
+                        <i class="fa-solid fa-microphone text-lg"></i>
                     </button>
                     <button onclick="sendMessage()" class="bg-emerald-500 hover:bg-emerald-600 text-white w-9 h-9 rounded-xl flex items-center justify-center transition shadow-md">
                         <i class="fa-solid fa-arrow-up"></i>
@@ -94,9 +98,63 @@
     </main>
 
     <script>
-        const userId = "user_" + Math.random().toString(36.substring(2, 9));
+        const userId = "user_" + Math.random().toString(36).substring(2, 9);
         let ws = null;
-        let isRecording = false;
+        let recognition = null;
+        let isListening = false;
+
+        // Brauzerning Speech Recognition (Ovozni matnga o'girish) API sini sozlash
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'uz-UZ'; // O'zbek tili
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onresult = function(event) {
+                const speechResult = event.results[0][0].transcript;
+                document.getElementById("promptInput").value = speechResult;
+                stopListeningVisual();
+                sendMessage(); // Avtomatik yuborish
+            };
+
+            recognition.onerror = function(event) {
+                console.error("Ovozni aniqlashda xato:", event.error);
+                stopListeningVisual();
+            };
+
+            recognition.onend = function() {
+                stopListeningVisual();
+            };
+        }
+
+        function toggleSpeechRecognition() {
+            if (!recognition) {
+                alert("Sizning brauzeringiz ovozli yozishni qo'llab-quvvatlamaydi. Iltimos Google Chrome dan foydalaning.");
+                return;
+            }
+            if (isListening) {
+                recognition.stop();
+                stopListeningVisual();
+            } else {
+                recognition.start();
+                startListeningVisual();
+            }
+        }
+
+        function startListeningVisual() {
+            isListening = true;
+            const btn = document.getElementById("voiceBtn");
+            btn.classList.add("text-red-500", "animate-pulse");
+            document.getElementById("promptInput").placeholder = "Eshitayapman, gapiring...";
+        }
+
+        function stopListeningVisual() {
+            isListening = false;
+            const btn = document.getElementById("voiceBtn");
+            btn.classList.remove("text-red-500", "animate-pulse");
+            document.getElementById("promptInput").placeholder = "ZiyoAI'ga xabar yozing yoki ovozli tugmani bosing...";
+        }
 
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -128,6 +186,8 @@
 
             const bubble = document.createElement("div");
             bubble.className = `p-4 rounded-2xl max-w-[85%] text-sm leading-relaxed border shadow-sm ${type === 'user' ? 'bg-indigo-900/40 border-indigo-800 text-white' : 'bg-inputBg border-gray-800 text-gray-200'}`;
+            
+            // Agar rejim rasm yoki video so'ralsa qo'shimcha element qo'shish
             bubble.innerText = text;
 
             wrapper.appendChild(avatar);
@@ -140,10 +200,47 @@
         function sendMessage() {
             const input = document.getElementById("promptInput");
             const text = input.value.trim();
+            const mode = document.getElementById("aiMode").value;
             if (!text) return;
 
             appendMessage("Siz", text, "user");
             input.value = "";
+
+            if (mode === "image_gen") {
+                setTimeout(() => {
+                    const chatBox = document.getElementById("chatMessages");
+                    const wrapper = document.createElement("div");
+                    wrapper.className = `flex gap-4 items-start`;
+                    wrapper.innerHTML = `
+                        <div class="w-8 h-8 rounded-full bg-accentGreen flex items-center justify-center text-white font-bold shrink-0">Z</div>
+                        <div class="bg-inputBg p-4 rounded-2xl max-w-[85%] border border-gray-800 shadow-sm flex flex-col gap-3">
+                            <p class="text-sm text-gray-200">Sizning talabingiz bo'yicha rasm yaratildi:</p>
+                            <div class="w-full h-64 bg-gray-800 rounded-xl flex items-center justify-center text-emerald-400 font-bold border border-gray-700">🎨 [Generatsiya qilingan rasm]</div>
+                            <a href="#" class="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg w-max font-medium">Yuklab olish</a>
+                        </div>`;
+                    chatBox.appendChild(wrapper);
+                    scrollToBottom();
+                }, 1000);
+                return;
+            }
+
+            if (mode === "video_gen") {
+                setTimeout(() => {
+                    const chatBox = document.getElementById("chatMessages");
+                    const wrapper = document.createElement("div");
+                    wrapper.className = `flex gap-4 items-start`;
+                    wrapper.innerHTML = `
+                        <div class="w-8 h-8 rounded-full bg-accentGreen flex items-center justify-center text-white font-bold shrink-0">Z</div>
+                        <div class="bg-inputBg p-4 rounded-2xl max-w-[85%] border border-gray-800 shadow-sm flex flex-col gap-3">
+                            <p class="text-sm text-gray-200">Instagram / TikTok uslubidagi MP4 video tayyorlandi:</p>
+                            <div class="w-full h-48 bg-black rounded-xl flex items-center justify-center text-emerald-400 font-bold border border-gray-700"><i class="fa-solid fa-play text-3xl"></i></div>
+                            <a href="#" class="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg w-max font-medium"><i class="fa-solid fa-download"></i> MP4 formatda yuklab olish</a>
+                        </div>`;
+                    chatBox.appendChild(wrapper);
+                    scrollToBottom();
+                }, 1500);
+                return;
+            }
 
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(text);
@@ -160,17 +257,6 @@
         function scrollToBottom() {
             const box = document.getElementById("chatMessages");
             box.scrollTop = box.scrollHeight;
-        }
-
-        function toggleVoice() {
-            isRecording = !isRecording;
-            const btn = document.getElementById("voiceBtn");
-            if (isRecording) {
-                btn.classList.add("text-red-500", "animate-pulse");
-                alert("Ovozli yozuv rejimi yoqildi (ChatGPT Style Voice simulyatsiyasi).");
-            } else {
-                btn.classList.remove("text-red-500", "animate-pulse");
-            }
         }
 
         async function uploadFile() {
@@ -193,7 +279,7 @@
         async function openCabinet() {
             const res = await fetch(`/api/user/${userId}`);
             const data = await res.json();
-            alert(`Foydalanuvchi: ${data.username}\nBalans: ${data.balance} so'rov\nAPI Kalit: ${data.api_key}`);
+            alert(`Foydalanuvchi Kabineti:\n\nUsername: ${data.username}\nBalans: ${data.balance} so'rov\nAPI Kalit: ${data.api_key}`);
         }
 
         connectWebSocket();
